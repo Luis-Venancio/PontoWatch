@@ -11,7 +11,7 @@ Ordem de execução:
 from datetime import date, datetime
 from loguru import logger
 from app.services.sync_service import sincronizar_funcionarios, sincronizar_batidas
-from app.services.comparacao_engine import processar_dia
+from app.services.comparacao_engine import processar_dia, processar_presenca_dia
 from app.services.notificacoes import disparar_alertas_pendentes
 from app.core.database import get_supabase
 
@@ -31,6 +31,7 @@ def executar_job(dia: date | None = None) -> dict:
         "funcionarios_sync": 0,
         "batidas_sync": 0,
         "comparacoes": {},
+        "presenca": {},
         "alertas_enviados": 0,
         "status": "SUCESSO",
         "erro": None,
@@ -47,12 +48,16 @@ def executar_job(dia: date | None = None) -> dict:
         logger.info(f"Passo 2/4: sincronizando batidas de {dia}...")
         resultado["batidas_sync"] = sincronizar_batidas(dia)
 
-        # 3. Comparações
-        logger.info("Passo 3/4: processando comparações...")
+        # 3. Comparações (conformidade de local — só quem tem roteiro)
+        logger.info("Passo 3/5: processando comparações...")
         resultado["comparacoes"] = processar_dia(dia)
 
-        # 4. Alertas
-        logger.info("Passo 4/4: disparando alertas...")
+        # 4. Presença geral (bateu ponto ou não — todo mundo)
+        logger.info("Passo 4/5: processando presença geral...")
+        resultado["presenca"] = processar_presenca_dia(dia)
+
+        # 5. Alertas
+        logger.info("Passo 5/5: disparando alertas...")
         resultado["alertas_enviados"] = disparar_alertas_pendentes(dia)
 
         logger.info(f"=== JOB CONCLUÍDO — {resultado} ===")

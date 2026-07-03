@@ -29,6 +29,7 @@ export const api = {
     resumo:        (dia) => request("GET", `/painel/resumo${dia ? `?dia=${dia}` : ""}`),
     monitoramento: (dia) => request("GET", `/painel/monitoramento${dia ? `?dia=${dia}` : ""}`),
     porEquipe:     (dia) => request("GET", `/painel/por-equipe${dia ? `?dia=${dia}` : ""}`),
+    presenca:      (dia) => request("GET", `/painel/presenca${dia ? `?dia=${dia}` : ""}`),
   },
 
   // ── Roteiros ────────────────────────────────────────────────

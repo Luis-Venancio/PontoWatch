@@ -64,6 +64,39 @@ def monitoramento_tempo_real(dia: date = Query(default=None)):
     return {"data": dia.isoformat(), "registros": rows}
 
 
+@router.get("/presenca")
+def presenca_geral(dia: date = Query(default=None)):
+    """
+    Presença de TODOS os funcionários ativos no dia (bateu ponto ou não),
+    independente de terem roteiro cadastrado. Complementa /monitoramento,
+    que só cobre quem tem roteiro (e traz conformidade de local/GPS).
+    """
+    dia = dia or date.today()
+    db = get_supabase()
+
+    rows = (
+        db.table("presencas_dia")
+        .select(
+            "bateu_ponto, tem_roteiro, primeira_batida, ultima_batida, total_batidas, "
+            "funcionarios(nome, equipe, departamento)"
+        )
+        .eq("data_referencia", dia.isoformat())
+        .order("nome", foreign_table="funcionarios")
+        .execute()
+        .data or []
+    )
+
+    presentes = sum(1 for r in rows if r["bateu_ponto"])
+
+    return {
+        "data": dia.isoformat(),
+        "total": len(rows),
+        "presentes": presentes,
+        "ausentes": len(rows) - presentes,
+        "registros": rows,
+    }
+
+
 @router.get("/por-equipe")
 def conformidade_por_equipe(dia: date = Query(default=None)):
     """Conformidade agrupada por equipe."""

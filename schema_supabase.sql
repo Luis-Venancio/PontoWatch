@@ -130,6 +130,28 @@ CREATE TABLE IF NOT EXISTS comparacoes (
 
 
 -- ============================================================
+-- 5.1 PRESENÇAS DO DIA
+--    Presença (bateu ponto ou não) de TODO funcionário ativo,
+--    independente de ter roteiro cadastrado. Complementa `comparacoes`,
+--    que só cobre quem tem roteiro (e traz a conformidade de local).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS presencas_dia (
+    id                 UUID     PRIMARY KEY DEFAULT gen_random_uuid(),
+    funcionario_id     UUID     NOT NULL REFERENCES funcionarios(id),
+    data_referencia    DATE     NOT NULL,
+    tem_roteiro        BOOLEAN  NOT NULL DEFAULT FALSE,
+    bateu_ponto        BOOLEAN  NOT NULL DEFAULT FALSE,
+    primeira_batida    TIME,
+    ultima_batida      TIME,
+    total_batidas      INTEGER  NOT NULL DEFAULT 0,
+    processado_em      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (funcionario_id, data_referencia)
+);
+
+CREATE INDEX IF NOT EXISTS idx_presencas_data ON presencas_dia (data_referencia);
+
+
+-- ============================================================
 -- 6. ALERTAS
 --    Gerados a partir das comparações para notificação do RH
 -- ============================================================

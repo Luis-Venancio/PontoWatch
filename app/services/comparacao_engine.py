@@ -98,6 +98,77 @@ def processar_dia(dia: date) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────
+# Presença geral (independente de roteiro)
+# ──────────────────────────────────────────────────────────────
+
+def processar_presenca_dia(dia: date) -> dict:
+    """
+    Gera um registro de presença (bateu ponto ou não) para TODOS os
+    funcionários ativos no dia informado, independente de terem roteiro
+    cadastrado. Complementa `processar_dia()`, que só avalia conformidade
+    de local para quem tem roteiro.
+    """
+    db = get_supabase()
+
+    funcionarios = db.table("funcionarios").select("id").eq("ativo", True).execute().data or []
+
+    batidas_raw = (
+        db.table("batidas_ponto")
+        .select("funcionario_id, data_hora")
+        .gte("data_hora", f"{dia.isoformat()}T00:00:00")
+        .lte("data_hora", f"{dia.isoformat()}T23:59:59")
+        .execute()
+        .data or []
+    )
+    batidas_por_func: dict[str, list[str]] = {}
+    for b in batidas_raw:
+        batidas_por_func.setdefault(b["funcionario_id"], []).append(b["data_hora"])
+
+    roteiros_hoje = (
+        db.table("roteiros")
+        .select("funcionario_id")
+        .eq("data_roteiro", dia.isoformat())
+        .execute()
+        .data or []
+    )
+    funcs_com_roteiro = {r["funcionario_id"] for r in roteiros_hoje}
+
+    registros = []
+    for f in funcionarios:
+        fid = f["id"]
+        horarios = sorted(batidas_por_func.get(fid, []))
+        registros.append({
+            "funcionario_id":  fid,
+            "data_referencia": dia.isoformat(),
+            "tem_roteiro":     fid in funcs_com_roteiro,
+            "bateu_ponto":     len(horarios) > 0,
+            "primeira_batida": _hora_str(horarios[0]) if horarios else None,
+            "ultima_batida":   _hora_str(horarios[-1]) if horarios else None,
+            "total_batidas":   len(horarios),
+        })
+
+    if registros:
+        db.table("presencas_dia").upsert(
+            registros, on_conflict="funcionario_id,data_referencia"
+        ).execute()
+
+    presentes = sum(1 for r in registros if r["bateu_ponto"])
+    return {
+        "total": len(registros),
+        "presentes": presentes,
+        "ausentes": len(registros) - presentes,
+    }
+
+
+def _hora_str(data_hora_iso: str) -> str | None:
+    try:
+        dh = datetime.fromisoformat(data_hora_iso)
+        return dh.time().isoformat()
+    except Exception:
+        return None
+
+
+# ──────────────────────────────────────────────────────────────
 # Lógica por parada
 # ──────────────────────────────────────────────────────────────
 
