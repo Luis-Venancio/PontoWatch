@@ -8,6 +8,7 @@ from app.core.database import get_supabase
 router = APIRouter(prefix="/alertas", tags=["Alertas"])
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def listar_alertas(
     dia: date = Query(default=None),

@@ -9,6 +9,7 @@ from app.core.database import get_supabase
 router = APIRouter(prefix="/funcionarios", tags=["Funcionários"])
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def listar_funcionarios(
     apenas_ativos: bool = Query(default=True),

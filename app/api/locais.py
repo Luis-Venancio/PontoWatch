@@ -29,6 +29,7 @@ class LocalIn(BaseModel):
 # Endpoints
 # ──────────────────────────────────────────────────────────────
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def listar_locais(apenas_ativos: bool = True):
     """Lista todos os locais de atendimento cadastrados."""
@@ -50,6 +51,7 @@ def buscar_local(local_id: str):
     return rows[0]
 
 
+@router.post("", status_code=201, include_in_schema=False)
 @router.post("/", status_code=201)
 def criar_local(local: LocalIn):
     """Cria um novo local de atendimento."""
