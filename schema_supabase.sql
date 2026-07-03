@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS presencas_dia (
     primeira_batida    TIME,
     ultima_batida      TIME,
     total_batidas      INTEGER  NOT NULL DEFAULT 0,
+    status_padrao      TEXT,    -- CONFORME | ATRASO | AUSENTE (só p/ quem NÃO tem roteiro; NULL = tem roteiro, ver `comparacoes`)
     processado_em      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (funcionario_id, data_referencia)
 );
@@ -203,7 +204,9 @@ INSERT INTO configuracoes (chave, valor, descricao) VALUES
     ('job_hora_execucao',     '06:00',  'Horário diário de execução do job (HH:MM, fuso America/Sao_Paulo)'),
     ('tolerancia_padrao_min', '15',     'Tolerância padrão em minutos para classificar atraso'),
     ('raio_padrao_m',         '200',    'Raio padrão de aceitação de geolocalização em metros'),
-    ('nivel_alerta_gestor',   '2',      'Nível mínimo de alerta para notificar gestor (1, 2 ou 3)')
+    ('nivel_alerta_gestor',   '2',      'Nível mínimo de alerta para notificar gestor (1, 2 ou 3)'),
+    ('horario_padrao_entrada','08:00',  'Horário padrão de entrada (quem não tem roteiro/turno específico)'),
+    ('horario_padrao_saida',  '17:48',  'Horário padrão de saída (quem não tem roteiro/turno específico)')
 ON CONFLICT (chave) DO NOTHING;
 
 

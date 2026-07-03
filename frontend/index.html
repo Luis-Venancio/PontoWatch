@@ -84,7 +84,7 @@ content.innerHTML = `
           <thead>
             <tr>
               <th>Funcionário</th><th>Equipe</th><th>Roteiro?</th>
-              <th>Bateu Ponto?</th><th>1ª Batida</th><th>Última Batida</th>
+              <th>Status</th><th>1ª Batida</th><th>Última Batida</th>
             </tr>
           </thead>
           <tbody id="presenca-body">
@@ -202,18 +202,20 @@ async function carregarPresenca() {
     }
     document.getElementById("presenca-body").innerHTML = rows.map(r => {
       const f = r.funcionarios || {};
-      const bateu = r.bateu_ponto
-        ? `<span class="pill ok">✅ Sim</span>`
-        : `<span class="pill absent">❌ Não</span>`;
       const roteiro = r.tem_roteiro
         ? `<span class="pill pending">Sim</span>`
         : `<span class="text-muted">—</span>`;
+      // Quem tem roteiro: status detalhado está em "Monitoramento em Tempo Real".
+      // Quem não tem: usa status_padrao (horário padrão da empresa).
+      const status = r.tem_roteiro
+        ? `<span class="text-muted" style="font-size:12px">ver monitoramento</span>`
+        : pillStatus(r.status_padrao);
       return `
         <tr>
           <td><strong>${f.nome || "—"}</strong></td>
           <td>${f.equipe || "—"}</td>
           <td>${roteiro}</td>
-          <td>${bateu}</td>
+          <td>${status}</td>
           <td class="text-mono">${formatarHora(r.primeira_batida)}</td>
           <td class="text-mono">${formatarHora(r.ultima_batida)}</td>
         </tr>`;

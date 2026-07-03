@@ -10,11 +10,19 @@ router = APIRouter(prefix="/painel", tags=["Painel"])
 
 @router.get("/resumo")
 def resumo_do_dia(dia: date = Query(default=None)):
-    """KPIs do dia: conformes, ausentes, atrasos, fora do local."""
+    """
+    KPIs do dia: conformes, ausentes, atrasos, fora do local.
+
+    Combina duas fontes: `comparacoes` (conformidade de local/horário —
+    só quem tem roteiro) e `presencas_dia` (presença + status_padrao —
+    todo mundo, usando o horário padrão da empresa pra quem não tem
+    roteiro). "Ausentes" e "total" vêm sempre de `presencas_dia`, que
+    cobre os 2 casos sem duplicar contagem.
+    """
     dia = dia or date.today()
+    db = get_supabase()
 
     try:
-        db = get_supabase()
         rows = (
             db.table("comparacoes")
             .select("status_presenca")
@@ -25,17 +33,32 @@ def resumo_do_dia(dia: date = Query(default=None)):
     except Exception:
         rows = []
 
-    contadores = {"CONFORME": 0, "AUSENTE": 0, "ATRASO": 0, "FORA_DO_LOCAL": 0, "PARCIAL": 0}
+    contadores = {"CONFORME": 0, "ATRASO": 0, "FORA_DO_LOCAL": 0, "PARCIAL": 0}
     for r in rows:
         contadores[r["status_presenca"]] = contadores.get(r["status_presenca"], 0) + 1
 
+    try:
+        presenca_rows = (
+            db.table("presencas_dia")
+            .select("bateu_ponto, status_padrao")
+            .eq("data_referencia", dia.isoformat())
+            .execute()
+            .data or []
+        )
+    except Exception:
+        presenca_rows = []
+
+    ausentes = sum(1 for r in presenca_rows if not r["bateu_ponto"])
+    conformes_padrao = sum(1 for r in presenca_rows if r["status_padrao"] == "CONFORME")
+    atrasos_padrao = sum(1 for r in presenca_rows if r["status_padrao"] == "ATRASO")
+
     return {
         "data": dia.isoformat(),
-        "total": len(rows),
-        "conformes":    contadores["CONFORME"],
-        "ausentes":     contadores["AUSENTE"],
-        "atrasos":      contadores["ATRASO"],
-        "fora_do_local":contadores["FORA_DO_LOCAL"],
+        "total": len(presenca_rows) or len(rows),
+        "conformes":     contadores["CONFORME"] + conformes_padrao,
+        "ausentes":      ausentes,
+        "atrasos":       contadores["ATRASO"] + atrasos_padrao,
+        "fora_do_local": contadores["FORA_DO_LOCAL"],
     }
 
 
@@ -77,7 +100,7 @@ def presenca_geral(dia: date = Query(default=None)):
     rows = (
         db.table("presencas_dia")
         .select(
-            "bateu_ponto, tem_roteiro, primeira_batida, ultima_batida, total_batidas, "
+            "bateu_ponto, tem_roteiro, status_padrao, primeira_batida, ultima_batida, total_batidas, "
             "funcionarios(nome, equipe, departamento)"
         )
         .eq("data_referencia", dia.isoformat())

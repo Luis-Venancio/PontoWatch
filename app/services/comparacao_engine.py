@@ -107,8 +107,16 @@ def processar_presenca_dia(dia: date) -> dict:
     funcionários ativos no dia informado, independente de terem roteiro
     cadastrado. Complementa `processar_dia()`, que só avalia conformidade
     de local para quem tem roteiro.
+
+    Para quem NÃO tem roteiro, calcula também `status_padrao`
+    (CONFORME/ATRASO/AUSENTE) usando o horário padrão da empresa
+    (configuracoes: horario_padrao_entrada, tolerancia_padrao_min) — quem
+    tem roteiro já tem esse cálculo mais preciso em `comparacoes`.
     """
     db = get_supabase()
+
+    horario_entrada_padrao = _parse_time(_config(db, "horario_padrao_entrada", "08:00"))
+    tolerancia_padrao = int(_config(db, "tolerancia_padrao_min", "15"))
 
     funcionarios = db.table("funcionarios").select("id").eq("ativo", True).execute().data or []
 
@@ -136,15 +144,30 @@ def processar_presenca_dia(dia: date) -> dict:
     registros = []
     for f in funcionarios:
         fid = f["id"]
+        tem_roteiro = fid in funcs_com_roteiro
         horarios = sorted(batidas_por_func.get(fid, []))
+        primeira_hora = _hora_da_iso(horarios[0]) if horarios else None
+        primeira = primeira_hora.isoformat() if primeira_hora else None
+
+        status_padrao = None
+        if not tem_roteiro:
+            if not horarios:
+                status_padrao = "AUSENTE"
+            else:
+                atraso = _diff_minutos(horario_entrada_padrao, primeira_hora)
+                status_padrao = "ATRASO" if atraso and atraso > tolerancia_padrao else "CONFORME"
+
+        ultima_hora = _hora_da_iso(horarios[-1]) if horarios else None
+
         registros.append({
             "funcionario_id":  fid,
             "data_referencia": dia.isoformat(),
-            "tem_roteiro":     fid in funcs_com_roteiro,
+            "tem_roteiro":     tem_roteiro,
             "bateu_ponto":     len(horarios) > 0,
-            "primeira_batida": _hora_str(horarios[0]) if horarios else None,
-            "ultima_batida":   _hora_str(horarios[-1]) if horarios else None,
+            "primeira_batida": primeira,
+            "ultima_batida":   ultima_hora.isoformat() if ultima_hora else None,
             "total_batidas":   len(horarios),
+            "status_padrao":   status_padrao,
         })
 
     if registros:
@@ -160,10 +183,18 @@ def processar_presenca_dia(dia: date) -> dict:
     }
 
 
-def _hora_str(data_hora_iso: str) -> str | None:
+def _config(db, chave: str, default: str) -> str:
+    rows = db.table("configuracoes").select("valor").eq("chave", chave).execute().data or []
+    return rows[0]["valor"] if rows else default
+
+
+def _hora_da_iso(data_hora_iso: str) -> time | None:
+    """Extrai a hora (wall-clock local, sem tzinfo) de um datetime ISO."""
     try:
         dh = datetime.fromisoformat(data_hora_iso)
-        return dh.time().isoformat()
+        if dh.tzinfo is not None:
+            dh = dh.replace(tzinfo=None)
+        return dh.time()
     except Exception:
         return None
 
