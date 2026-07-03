@@ -1,0 +1,26 @@
+# Ambiente e segredos
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Vercel
+.vercel
+
+# Windows / OneDrive
+desktop.ini
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Claude Code (config local, não do projeto)
+.claude/settings.local.json

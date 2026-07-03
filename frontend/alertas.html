@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Alertas</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { api } from "./api.js";
+import { hojeISO, nivelAlerta, toast } from "./utils.js";
+
+montarLayout("alertas", "Alertas e Notificações");
+
+const content = document.getElementById("content");
+const hoje = hojeISO();
+let nivelFiltro = 1;
+let alertas = [];
+
+content.innerHTML = `
+  <!-- Filtros -->
+  <div class="card mb-16">
+    <div class="card-body" style="padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:13px;font-weight:600;color:var(--muted)">Filtrar:</span>
+      <button class="btn btn-ghost nivel-btn active" data-nivel="1" style="font-size:12px;padding:5px 12px">Todos</button>
+      <button class="btn btn-ghost nivel-btn" data-nivel="2" style="font-size:12px;padding:5px 12px">Atenção+</button>
+      <button class="btn btn-ghost nivel-btn" data-nivel="3" style="font-size:12px;padding:5px 12px">Só Críticos</button>
+      <span id="contagem" class="ml-auto text-muted"></span>
+      <button id="btn-atualizar" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">⟳</button>
+    </div>
+  </div>
+
+  <!-- Lista de alertas -->
+  <div id="alertas-lista"></div>
+
+  <div class="divider"></div>
+
+  <!-- Configurações -->
+  <div class="card">
+    <div class="card-header"><span>📬</span><span class="card-title">Configurações de Notificação</span></div>
+    <div class="card-body">
+      <div class="notify-chip">
+        <span style="font-size:18px">📧</span>
+        <span class="notify-label">E-mail para gestor (nível 2+)</span>
+        <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="notify-chip">
+        <span style="font-size:18px">📱</span>
+        <span class="notify-label">WhatsApp para gestor (nível 3)</span>
+        <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="notify-chip">
+        <span style="font-size:18px">📊</span>
+        <span class="notify-label">Relatório diário RH por e-mail (06:00)</span>
+        <div class="toggle" onclick="this.classList.toggle('on')"></div>
+      </div>
+    </div>
+  </div>
+`;
+
+async function carregar() {
+  try {
+    const d = await api.alertas.listar(hoje, nivelFiltro);
+    alertas = d.alertas || [];
+    renderizarAlertas();
+  } catch (e) {
+    document.getElementById("alertas-lista").innerHTML =
+      `<div class="text-muted" style="padding:16px">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderizarAlertas() {
+  document.getElementById("contagem").textContent = `${alertas.length} alerta(s)`;
+
+  if (!alertas.length) {
+    document.getElementById("alertas-lista").innerHTML =
+      `<div class="empty-state"><div class="icon">🎉</div><p>Nenhum alerta para este filtro</p></div>`;
+    return;
+  }
+
+  document.getElementById("alertas-lista").innerHTML = alertas.map(a => {
+    const cor = a.nivel === 3 ? "red" : "amber";
+    const func = a.funcionarios || {};
+    return `
+      <div class="card mb-16" id="alerta-${a.id}">
+        <div class="card-body">
+          <div class="alert-item" style="padding:14px 0">
+            <div class="alert-dot ${cor}" style="margin-top:8px"></div>
+            <div style="flex:1">
+              <div class="flex gap-10 mb-10">
+                <span style="font-size:14px;font-weight:700">${_tipoLabel(a.tipo_alerta)} — ${func.nome || "?"}</span>
+                ${nivelAlerta(a.nivel)}
+                ${a.enviado ? `<span class="pill ok" style="font-size:10px">✔ Resolvido</span>` : ''}
+              </div>
+              <div style="font-size:13px;color:var(--slate2);line-height:1.5">${a.descricao || ''}</div>
+              <div class="flex gap-10" style="margin-top:10px">
+                <span class="text-muted">${a.criado_em ? a.criado_em.slice(11,16) : ''} · Gerado automaticamente</span>
+                <div class="ml-auto flex gap-10">
+                  ${!a.enviado ? `<button class="btn btn-primary btn-resolver" data-id="${a.id}" style="font-size:12px;padding:5px 10px">✔ Marcar resolvido</button>` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  // Eventos de resolução
+  document.querySelectorAll(".btn-resolver").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api.alertas.resolver(btn.dataset.id);
+        toast("Alerta marcado como resolvido", "ok");
+        await carregar();
+      } catch (e) {
+        toast("Erro: " + e.message, "erro");
+      }
+    });
+  });
+}
+
+function _tipoLabel(tipo) {
+  const map = {
+    AUSENCIA: "Ausência", ATRASO: "Atraso", FORA_DO_LOCAL: "Fora do Local",
+    SAIDA_ANTECIPADA: "Saída Antecipada", SEM_BATIDA: "Sem Batida",
+  };
+  return map[tipo] || tipo;
+}
+
+// Filtros de nível
+document.querySelectorAll(".nivel-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".nivel-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    nivelFiltro = parseInt(btn.dataset.nivel);
+    carregar();
+  });
+});
+
+document.getElementById("btn-atualizar").addEventListener("click", carregar);
+
+carregar();
+</script>
+</body>
+</html>

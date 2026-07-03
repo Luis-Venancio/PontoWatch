@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Funcionários</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { toast } from "./utils.js";
+
+montarLayout("funcionarios", "Funcionários");
+
+const API = window.PONTOWATCH_API_URL || "http://localhost:8001";
+const content = document.getElementById("content");
+
+let funcionarios = [];
+
+content.innerHTML = `
+  <!-- Filtros -->
+  <div class="card mb-16">
+    <div class="card-body" style="padding:14px 20px">
+      <div class="form-row" style="align-items:flex-end;gap:12px">
+        <div class="field" style="flex:2">
+          <label>Buscar por nome ou matrícula</label>
+          <input type="text" id="inp-busca" placeholder="🔍  Digite para filtrar…"/>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Equipe</label>
+          <select id="sel-equipe">
+            <option value="">Todas as equipes</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Status</label>
+          <select id="sel-status">
+            <option value="true">Somente ativos</option>
+            <option value="false">Todos (incluindo inativos)</option>
+          </select>
+        </div>
+        <div>
+          <button id="btn-sync" class="btn btn-ghost" title="Executa o job de sincronização com o Ponto Mais">
+            🔄 Sincronizar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs rápidos -->
+  <div class="kpi-grid" id="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+    <div class="kpi teal"><div class="kpi-label">Total Ativos</div><div class="kpi-value" id="kpi-ativos">—</div><div class="kpi-icon">👤</div></div>
+    <div class="kpi"><div class="kpi-label">Equipes</div><div class="kpi-value" id="kpi-equipes">—</div><div class="kpi-icon">👥</div></div>
+    <div class="kpi"><div class="kpi-label">Última Sync</div><div class="kpi-value" id="kpi-sync" style="font-size:14px;margin-top:8px">—</div></div>
+  </div>
+
+  <!-- Tabela -->
+  <div class="card">
+    <div class="card-header">
+      <span>👤</span><span class="card-title">Lista de Funcionários</span>
+      <span id="contador" class="ml-auto text-muted"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Matrícula</th>
+              <th>Cargo</th>
+              <th>Equipe</th>
+              <th>Departamento</th>
+              <th>E-mail</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info sobre sincronização -->
+  <div style="margin-top:12px;text-align:center">
+    <span class="text-muted" style="font-size:11px">
+      Os dados são sincronizados automaticamente do Ponto Mais pelo job diário (06:00).
+      Use o botão "Sincronizar" para atualizar agora.
+    </span>
+  </div>
+`;
+
+// ── Carregar dados ─────────────────────────────────────────
+async function carregar() {
+  const apenasAtivos = document.getElementById("sel-status").value;
+  const equipe       = document.getElementById("sel-equipe").value;
+
+  try {
+    let url = `${API}/funcionarios/?apenas_ativos=${apenasAtivos}`;
+    if (equipe) url += `&equipe=${encodeURIComponent(equipe)}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+    funcionarios = data.funcionarios || [];
+
+    atualizarKPIs(funcionarios);
+    renderizarTabela(funcionarios);
+  } catch (e) {
+    document.getElementById("tabela-body").innerHTML =
+      `<tr><td colspan="7" class="text-muted" style="padding:16px;text-align:center">Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+async function carregarEquipes() {
+  try {
+    const res = await fetch(`${API}/funcionarios/equipes`);
+    const data = await res.json();
+    const sel = document.getElementById("sel-equipe");
+    (data.equipes || []).forEach(eq => {
+      const opt = document.createElement("option");
+      opt.value = eq;
+      opt.textContent = eq;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+function atualizarKPIs(lista) {
+  const ativos  = lista.filter(f => f.ativo).length;
+  const equipes = new Set(lista.filter(f => f.equipe).map(f => f.equipe)).size;
+  const datas   = lista.map(f => f.atualizado_em).filter(Boolean).sort().reverse();
+  const ultima  = datas[0] ? new Date(datas[0]).toLocaleDateString("pt-BR") : "—";
+
+  document.getElementById("kpi-ativos").textContent  = ativos;
+  document.getElementById("kpi-equipes").textContent = equipes;
+  document.getElementById("kpi-sync").textContent    = ultima;
+}
+
+function renderizarTabela(lista) {
+  const busca = (document.getElementById("inp-busca").value || "").toLowerCase();
+  const filtrado = busca
+    ? lista.filter(f =>
+        (f.nome || "").toLowerCase().includes(busca) ||
+        (f.matricula || "").toLowerCase().includes(busca))
+    : lista;
+
+  document.getElementById("contador").textContent = `${filtrado.length} funcionário(s)`;
+
+  if (!filtrado.length) {
+    document.getElementById("tabela-body").innerHTML =
+      `<tr><td colspan="7"><div class="empty-state"><div class="icon">👤</div>
+       <p>${busca ? 'Nenhum resultado para a busca.' : 'Nenhum funcionário encontrado.<br>Execute uma sincronização com o Ponto Mais.'}</p>
+       </div></td></tr>`;
+    return;
+  }
+
+  document.getElementById("tabela-body").innerHTML = filtrado.map(f => `
+    <tr style="${f.ativo ? '' : 'opacity:0.5'}">
+      <td>
+        <div class="flex gap-10">
+          <div class="avatar" style="width:28px;height:28px;font-size:11px;flex-shrink:0">
+            ${(f.nome || "?").split(" ").slice(0, 2).map(p => p[0]).join("")}
+          </div>
+          <strong>${f.nome || "—"}</strong>
+        </div>
+      </td>
+      <td class="text-mono">${f.matricula || '<span class="text-muted">—</span>'}</td>
+      <td>${f.cargo || '<span class="text-muted">—</span>'}</td>
+      <td>${f.equipe ? `<span class="tag">${f.equipe}</span>` : '<span class="text-muted">—</span>'}</td>
+      <td>${f.departamento || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted" style="font-size:12px">${f.email || '—'}</td>
+      <td>${f.ativo
+        ? '<span class="pill ok">Ativo</span>'
+        : '<span class="pill absent">Inativo</span>'}</td>
+    </tr>`).join("");
+}
+
+// ── Sincronizar com Ponto Mais ─────────────────────────────
+document.getElementById("btn-sync").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-sync");
+  btn.disabled = true;
+  btn.textContent = "Sincronizando…";
+  try {
+    const res = await fetch(`${API}/job/executar`, { method: "POST" });
+    const data = await res.json();
+    toast(`Sincronização concluída: ${data.funcionarios_sync} funcionários`, "ok");
+    await carregar();
+  } catch (e) {
+    toast("Erro na sincronização: " + e.message, "erro");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 Sincronizar";
+  }
+});
+
+// ── Eventos de filtro ──────────────────────────────────────
+document.getElementById("inp-busca").addEventListener("input", () => renderizarTabela(funcionarios));
+document.getElementById("sel-equipe").addEventListener("change", carregar);
+document.getElementById("sel-status").addEventListener("change", carregar);
+
+// ── Inicializar ────────────────────────────────────────────
+carregarEquipes();
+carregar();
+</script>
+</body>
+</html>

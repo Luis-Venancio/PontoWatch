@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Locais</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { toast, setLoading } from "./utils.js";
+
+montarLayout("locais", "Locais de Atendimento");
+
+const API = window.PONTOWATCH_API_URL || "http://localhost:8001";
+const content = document.getElementById("content");
+
+// Estado
+let locais = [];
+let editandoId = null;
+
+content.innerHTML = `
+  <!-- Cabeçalho com botão novo -->
+  <div class="flex mb-16" style="gap:12px;align-items:center">
+    <div style="flex:1">
+      <input type="text" id="inp-busca" placeholder="🔍  Buscar por nome ou cidade…"
+             style="width:100%;max-width:340px"/>
+    </div>
+    <button id="btn-novo" class="btn btn-primary">+ Novo Local</button>
+  </div>
+
+  <!-- Formulário (oculto por padrão) -->
+  <div class="card mb-16" id="form-card" style="display:none">
+    <div class="card-header">
+      <span id="form-icon">➕</span>
+      <span class="card-title" id="form-titulo">Novo Local de Atendimento</span>
+      <button id="btn-fechar-form" class="btn btn-ghost ml-auto" style="padding:4px 10px;font-size:12px">✕ Fechar</button>
+    </div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="field">
+            <label>Nome do Local *</label>
+            <input type="text" id="f-nome" placeholder="Ex: Subestação Bela Vista"/>
+          </div>
+          <div class="field">
+            <label>Raio de Aceitação (metros)</label>
+            <input type="number" id="f-raio" value="200" min="10" max="5000"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Endereço</label>
+          <input type="text" id="f-endereco" placeholder="Rua, número"/>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Cidade</label>
+            <input type="text" id="f-cidade" placeholder="Ex: São Paulo"/>
+          </div>
+          <div class="field">
+            <label>CEP</label>
+            <input type="text" id="f-cep" placeholder="00000-000" maxlength="9"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label>Latitude</label>
+            <input type="number" id="f-lat" placeholder="-23.5505" step="0.000001"/>
+          </div>
+          <div class="field">
+            <label>Longitude</label>
+            <input type="number" id="f-lng" placeholder="-46.6333" step="0.000001"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Observação</label>
+          <input type="text" id="f-obs" placeholder="Informações adicionais (opcional)"/>
+        </div>
+        <div class="flex gap-10">
+          <button id="btn-salvar" class="btn btn-primary">💾 Salvar Local</button>
+          <button id="btn-cancelar" class="btn btn-ghost">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela de locais -->
+  <div class="card">
+    <div class="card-header">
+      <span>📍</span><span class="card-title">Locais Cadastrados</span>
+      <span id="contador" class="ml-auto text-muted"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Endereço</th>
+              <th>Cidade</th>
+              <th>Coordenadas</th>
+              <th>Raio</th>
+              <th>Status</th>
+              <th style="text-align:right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="7" class="text-muted" style="text-align:center;padding:32px">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+`;
+
+// ── Carregar locais ────────────────────────────────────────
+async function carregar() {
+  try {
+    const res = await fetch(`${API}/locais/?apenas_ativos=false`);
+    const data = await res.json();
+    locais = data.locais || [];
+    renderizarTabela(locais);
+  } catch (e) {
+    document.getElementById("tabela-body").innerHTML =
+      `<tr><td colspan="7" class="text-muted" style="padding:16px">Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+function renderizarTabela(lista) {
+  document.getElementById("contador").textContent = `${lista.length} local(is)`;
+
+  if (!lista.length) {
+    document.getElementById("tabela-body").innerHTML =
+      `<tr><td colspan="7"><div class="empty-state"><div class="icon">📍</div><p>Nenhum local cadastrado ainda.<br>Clique em "Novo Local" para começar.</p></div></td></tr>`;
+    return;
+  }
+
+  document.getElementById("tabela-body").innerHTML = lista.map(l => `
+    <tr id="row-${l.id}" style="${l.ativo ? '' : 'opacity:0.45'}">
+      <td><strong>${l.nome}</strong>${l.observacao ? `<br><span class="text-muted">${l.observacao}</span>` : ''}</td>
+      <td>${l.endereco || '<span class="text-muted">—</span>'}</td>
+      <td>${l.cidade || '<span class="text-muted">—</span>'}</td>
+      <td class="text-mono" style="font-size:11px">
+        ${l.latitude && l.longitude
+          ? `${Number(l.latitude).toFixed(5)}, ${Number(l.longitude).toFixed(5)}`
+          : '<span class="text-muted">Sem GPS</span>'}
+      </td>
+      <td><span class="raio-badge">${l.raio_aceitacao_m ?? 200}m</span></td>
+      <td>${l.ativo
+        ? '<span class="pill ok">Ativo</span>'
+        : '<span class="pill absent">Inativo</span>'}</td>
+      <td style="text-align:right">
+        <div class="flex gap-10" style="justify-content:flex-end">
+          <button class="icon-btn btn-editar" data-id="${l.id}" title="Editar">✏️</button>
+          ${l.ativo
+            ? `<button class="icon-btn btn-desativar btn-danger" data-id="${l.id}" title="Desativar">🗑</button>`
+            : `<button class="icon-btn btn-reativar" data-id="${l.id}" title="Reativar" style="color:var(--teal)">↩</button>`}
+        </div>
+      </td>
+    </tr>`).join("");
+
+  // Eventos de editar
+  document.querySelectorAll(".btn-editar").forEach(btn => {
+    btn.addEventListener("click", () => abrirEdicao(btn.dataset.id));
+  });
+
+  // Eventos de desativar
+  document.querySelectorAll(".btn-desativar").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Desativar este local? Ele não aparecerá mais nos roteiros.")) return;
+      try {
+        await fetch(`${API}/locais/${btn.dataset.id}`, { method: "DELETE" });
+        toast("Local desativado", "ok");
+        await carregar();
+      } catch (e) { toast("Erro: " + e.message, "erro"); }
+    });
+  });
+
+  // Eventos de reativar
+  document.querySelectorAll(".btn-reativar").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const local = locais.find(l => l.id === btn.dataset.id);
+      if (!local) return;
+      try {
+        await fetch(`${API}/locais/${btn.dataset.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...local, ativo: true }),
+        });
+        toast("Local reativado", "ok");
+        await carregar();
+      } catch (e) { toast("Erro: " + e.message, "erro"); }
+    });
+  });
+}
+
+// ── Abrir formulário ───────────────────────────────────────
+function abrirNovo() {
+  editandoId = null;
+  document.getElementById("form-icon").textContent = "➕";
+  document.getElementById("form-titulo").textContent = "Novo Local de Atendimento";
+  limparForm();
+  document.getElementById("form-card").style.display = "block";
+  document.getElementById("f-nome").focus();
+  document.getElementById("form-card").scrollIntoView({ behavior: "smooth" });
+}
+
+function abrirEdicao(id) {
+  const local = locais.find(l => l.id === id);
+  if (!local) return;
+  editandoId = id;
+  document.getElementById("form-icon").textContent = "✏️";
+  document.getElementById("form-titulo").textContent = `Editar: ${local.nome}`;
+  document.getElementById("f-nome").value     = local.nome || "";
+  document.getElementById("f-raio").value     = local.raio_aceitacao_m ?? 200;
+  document.getElementById("f-endereco").value = local.endereco || "";
+  document.getElementById("f-cidade").value   = local.cidade || "";
+  document.getElementById("f-cep").value      = local.cep || "";
+  document.getElementById("f-lat").value      = local.latitude ?? "";
+  document.getElementById("f-lng").value      = local.longitude ?? "";
+  document.getElementById("f-obs").value      = local.observacao || "";
+  document.getElementById("form-card").style.display = "block";
+  document.getElementById("form-card").scrollIntoView({ behavior: "smooth" });
+}
+
+function fecharForm() {
+  document.getElementById("form-card").style.display = "none";
+  editandoId = null;
+  limparForm();
+}
+
+function limparForm() {
+  ["f-nome","f-raio","f-endereco","f-cidade","f-cep","f-lat","f-lng","f-obs"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = id === "f-raio" ? "200" : "";
+  });
+}
+
+// ── Salvar ─────────────────────────────────────────────────
+async function salvar() {
+  const nome = document.getElementById("f-nome").value.trim();
+  if (!nome) { toast("O nome do local é obrigatório", "aviso"); return; }
+
+  const payload = {
+    nome,
+    raio_aceitacao_m: parseInt(document.getElementById("f-raio").value) || 200,
+    endereco: document.getElementById("f-endereco").value.trim() || null,
+    cidade:   document.getElementById("f-cidade").value.trim() || null,
+    cep:      document.getElementById("f-cep").value.trim() || null,
+    latitude:  parseFloat(document.getElementById("f-lat").value) || null,
+    longitude: parseFloat(document.getElementById("f-lng").value) || null,
+    observacao: document.getElementById("f-obs").value.trim() || null,
+    ativo: true,
+  };
+
+  const btn = document.getElementById("btn-salvar");
+  setLoading(btn, true);
+  try {
+    const url    = editandoId ? `${API}/locais/${editandoId}` : `${API}/locais/`;
+    const method = editandoId ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toast(editandoId ? "Local atualizado com sucesso!" : "Local criado com sucesso!", "ok");
+    fecharForm();
+    await carregar();
+  } catch (e) {
+    toast("Erro ao salvar: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Busca local (client-side) ──────────────────────────────
+document.getElementById("inp-busca").addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtrados = q
+    ? locais.filter(l =>
+        (l.nome || "").toLowerCase().includes(q) ||
+        (l.cidade || "").toLowerCase().includes(q) ||
+        (l.endereco || "").toLowerCase().includes(q))
+    : locais;
+  renderizarTabela(filtrados);
+});
+
+// ── Eventos ────────────────────────────────────────────────
+document.getElementById("btn-novo").addEventListener("click", abrirNovo);
+document.getElementById("btn-fechar-form").addEventListener("click", fecharForm);
+document.getElementById("btn-cancelar").addEventListener("click", fecharForm);
+document.getElementById("btn-salvar").addEventListener("click", salvar);
+
+// CEP: formata enquanto digita
+document.getElementById("f-cep").addEventListener("input", (e) => {
+  let v = e.target.value.replace(/\D/g, "").slice(0, 8);
+  if (v.length > 5) v = v.slice(0, 5) + "-" + v.slice(5);
+  e.target.value = v;
+});
+
+carregar();
+</script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Painel</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { api } from "./api.js";
+import { hojeISO, pillStatus, pillGeo, deltaMin, distanciaGPS, toast, setLoading, formatarHora } from "./utils.js";
+
+montarLayout("painel", "Painel de Hoje");
+
+const content = document.getElementById("content");
+const hoje = hojeISO();
+
+content.innerHTML = `
+  <!-- KPIs -->
+  <div class="kpi-grid" id="kpis">
+    ${kpiSkeleton()}
+  </div>
+
+  <div class="grid-2 mb-16">
+    <!-- Equipes -->
+    <div class="card">
+      <div class="card-header"><span>👥</span><span class="card-title">Conformidade por Equipe</span></div>
+      <div class="card-body" id="equipes-body">
+        <div class="text-muted">Carregando…</div>
+      </div>
+    </div>
+
+    <!-- Alertas recentes -->
+    <div class="card">
+      <div class="card-header">
+        <span>🔔</span><span class="card-title">Alertas Recentes</span>
+        <a href="alertas.html" class="btn btn-ghost ml-auto" style="font-size:12px;padding:5px 10px">Ver todos</a>
+      </div>
+      <div class="card-body" id="alertas-body">
+        <div class="text-muted">Carregando…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela de monitoramento -->
+  <div class="card">
+    <div class="card-header">
+      <span>📋</span><span class="card-title">Monitoramento em Tempo Real</span>
+      <div class="ml-auto flex gap-10">
+        <button id="btn-atualizar" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">⟳ Atualizar</button>
+        <button id="btn-job" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">▶ Rodar Job</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Funcionário</th><th>Local Previsto</th><th>Parada</th>
+              <th>Entrada Prev.</th><th>Entrada Real</th><th>Δ</th>
+              <th>GPS</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="8" class="text-muted" style="text-align:center;padding:24px">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+`;
+
+// ── Carregar dados ─────────────────────────────────────────
+async function carregar() {
+  await Promise.all([carregarKPIs(), carregarEquipes(), carregarTabela(), carregarAlertas()]);
+}
+
+async function carregarKPIs() {
+  try {
+    const d = await api.painel.resumo(hoje);
+    document.getElementById("kpis").innerHTML = `
+      <div class="kpi green"><div class="kpi-label">Conformes</div><div class="kpi-value">${d.conformes}</div><div class="kpi-sub">de ${d.total} registros</div><div class="kpi-icon">✅</div></div>
+      <div class="kpi red"><div class="kpi-label">Ausências</div><div class="kpi-value">${d.ausentes}</div><div class="kpi-sub">sem registro</div><div class="kpi-icon">⚠️</div></div>
+      <div class="kpi amber"><div class="kpi-label">Atrasos</div><div class="kpi-value">${d.atrasos}</div><div class="kpi-sub">acima da tolerância</div><div class="kpi-icon">⏱️</div></div>
+      <div class="kpi teal"><div class="kpi-label">Fora do Local</div><div class="kpi-value">${d.fora_do_local}</div><div class="kpi-sub">divergência GPS</div><div class="kpi-icon">📍</div></div>
+    `;
+  } catch (e) {
+    document.getElementById("kpis").innerHTML = `<div class="kpi" style="grid-column:1/-1"><div class="kpi-label">⚠️ Erro ao carregar KPIs: ${e.message}</div></div>`;
+  }
+}
+
+async function carregarEquipes() {
+  try {
+    const d = await api.painel.porEquipe(hoje);
+    const equipes = d.equipes || [];
+    if (!equipes.length) {
+      document.getElementById("equipes-body").innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>Nenhuma equipe com roteiro hoje</p></div>`;
+      return;
+    }
+    document.getElementById("equipes-body").innerHTML = equipes.map(e => `
+      <div style="margin-bottom:14px">
+        <div class="flex mb-10 gap-10">
+          <span style="font-size:13px;font-weight:600">${e.equipe}</span>
+          <span class="ml-auto text-muted">${e.conformes}/${e.total}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${e.pct}%;background:${e.pct >= 80 ? 'var(--green)' : e.pct >= 50 ? 'var(--amber)' : 'var(--red)'}"></div>
+        </div>
+      </div>
+    `).join("");
+  } catch (e) {
+    document.getElementById("equipes-body").innerHTML = `<div class="text-muted">Erro: ${e.message}</div>`;
+  }
+}
+
+async function carregarTabela() {
+  try {
+    const d = await api.painel.monitoramento(hoje);
+    const rows = d.registros || [];
+    if (!rows.length) {
+      document.getElementById("tabela-body").innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div><p>Nenhum dado para hoje</p></div></td></tr>`;
+      return;
+    }
+    document.getElementById("tabela-body").innerHTML = rows.map(r => {
+      const f = r.funcionarios || {};
+      const l = r.locais || {};
+      const rot = r.roteiros || {};
+      const raio = l.raio_aceitacao_m || 200;
+      return `
+        <tr>
+          <td><strong>${f.nome || "—"}</strong><br><span class="text-muted" style="font-size:11px">${f.equipe || ""}</span></td>
+          <td>${l.nome || "—"}</td>
+          <td><span class="tag">${rot.ordem ? rot.ordem + "ª parada" : "—"}</span></td>
+          <td class="text-mono">${formatarHora(r.hora_prevista_entrada)}</td>
+          <td class="text-mono">${formatarHora(r.hora_real_entrada)}</td>
+          <td>${deltaMin(r.minutos_atraso_entrada)}</td>
+          <td>${distanciaGPS(r.distancia_entrada_m, raio)}</td>
+          <td>${pillStatus(r.status_presenca)}</td>
+        </tr>`;
+    }).join("");
+  } catch (e) {
+    document.getElementById("tabela-body").innerHTML = `<tr><td colspan="8" class="text-muted" style="padding:16px">Erro: ${e.message}</td></tr>`;
+  }
+}
+
+async function carregarAlertas() {
+  try {
+    const d = await api.alertas.listar(hoje, 2);
+    const alertas = (d.alertas || []).slice(0, 4);
+    if (!alertas.length) {
+      document.getElementById("alertas-body").innerHTML = `<div class="empty-state"><div class="icon">🎉</div><p>Nenhum alerta hoje</p></div>`;
+      return;
+    }
+    document.getElementById("alertas-body").innerHTML = alertas.map(a => `
+      <div class="alert-item">
+        <div class="alert-dot ${a.nivel === 3 ? 'red' : 'amber'}"></div>
+        <div style="flex:1">
+          <div class="alert-text">${a.descricao}</div>
+          <div class="alert-time">${a.criado_em ? a.criado_em.slice(11,16) : ''}</div>
+        </div>
+        <div class="alert-level l${a.nivel}">${a.nivel === 3 ? 'CRÍTICO' : 'ATENÇÃO'}</div>
+      </div>
+    `).join("");
+  } catch (_) {}
+}
+
+// ── Eventos ────────────────────────────────────────────────
+document.getElementById("btn-atualizar").addEventListener("click", () => {
+  toast("Atualizando dados…", "ok");
+  carregar();
+});
+
+document.getElementById("btn-job").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-job");
+  setLoading(btn, true);
+  try {
+    const r = await api.job.executar();
+    toast(`Job concluído: ${r.comparacoes?.conformes ?? 0} conformes`, "ok");
+    await carregar();
+  } catch (e) {
+    toast("Erro ao rodar job: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+});
+
+// ── Carga inicial ──────────────────────────────────────────
+carregar();
+
+// ── Helpers ────────────────────────────────────────────────
+function kpiSkeleton() {
+  return Array(4).fill(`<div class="kpi"><div class="kpi-label">…</div><div class="kpi-value" style="color:var(--border)">—</div></div>`).join("");
+}
+</script>
+</body>
+</html>

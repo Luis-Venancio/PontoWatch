@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Mapa ao Vivo</title>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <style>
+    #mapa-leaflet { height: 460px; border-radius: 10px; z-index: 1; }
+    .leaflet-container { background: #1E3558; }
+  </style>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { api } from "./api.js";
+import { hojeISO, pillStatus, toast } from "./utils.js";
+
+montarLayout("mapa", "Mapa ao Vivo");
+
+const content = document.getElementById("content");
+const hoje = hojeISO();
+
+content.innerHTML = `
+  <div class="grid-2">
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <span>🗺️</span><span class="card-title">Posições de Hoje</span>
+          <div class="ml-auto flex gap-10" style="font-size:11px">
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>Conforme</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--amber);display:inline-block"></span>Atraso</span>
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span>Fora/Ausente</span>
+          </div>
+        </div>
+        <div class="card-body" style="padding:12px">
+          <div id="mapa-leaflet"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="card">
+        <div class="card-header"><span>📍</span><span class="card-title">Status por Local</span></div>
+        <div class="card-body" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Local</th><th>Prev.</th><th>Conf.</th><th>Status</th></tr></thead>
+              <tbody id="tabela-locais"><tr><td colspan="4" class="text-muted" style="padding:16px;text-align:center">Carregando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>📏</span><span class="card-title">Maiores Divergências GPS</span></div>
+        <div class="card-body" id="divergencias-body">
+          <div class="text-muted">Carregando…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+// Carrega Leaflet dinamicamente
+const script = document.createElement("script");
+script.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+script.onload = iniciarMapa;
+document.head.appendChild(script);
+
+async function iniciarMapa() {
+  // Centro padrão: São Paulo
+  const map = L.map("mapa-leaflet").setView([-23.5505, -46.6333], 11);
+
+  // Tile escuro compatível com o tema
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '© OpenStreetMap © CartoDB',
+    maxZoom: 19,
+  }).addTo(map);
+
+  try {
+    const d = await api.painel.monitoramento(hoje);
+    const rows = d.registros || [];
+
+    // Agrupa por local para construir a tabela
+    const porLocal = {};
+    const divergencias = [];
+
+    rows.forEach(r => {
+      const local = r.locais || {};
+      const nome = local.nome || "Desconhecido";
+      const lat = local.latitude;
+      const lng = local.longitude;
+      const raio = local.raio_aceitacao_m || 200;
+
+      if (!porLocal[nome]) porLocal[nome] = { nome, total: 0, conformes: 0, lat, lng, raio };
+      porLocal[nome].total++;
+      if (r.status_presenca === "CONFORME") porLocal[nome].conformes++;
+
+      // Pin de cada funcionário no local
+      if (lat && lng) {
+        const cor = corStatus(r.status_presenca);
+        const icone = pinIcone(cor);
+        const func = r.funcionarios || {};
+        L.marker([lat, lng], { icon: icone })
+          .addTo(map)
+          .bindPopup(`
+            <strong>${func.nome || "?"}</strong><br>
+            ${nome}<br>
+            Status: <b>${r.status_presenca}</b><br>
+            ${r.distancia_entrada_m != null ? `GPS: ${Math.round(r.distancia_entrada_m)}m do ponto` : ''}
+          `);
+
+        // Círculo de raio de aceitação
+        L.circle([lat, lng], {
+          radius: raio,
+          color: cor,
+          fillColor: cor,
+          fillOpacity: 0.08,
+          weight: 1,
+        }).addTo(map);
+      }
+
+      // Coleta divergências
+      if (r.distancia_entrada_m != null && r.distancia_entrada_m > (local.raio_aceitacao_m || 200)) {
+        divergencias.push({ func: (r.funcionarios || {}).nome, local: nome, dist: r.distancia_entrada_m, raio });
+      }
+    });
+
+    // Tabela de locais
+    const locaisList = Object.values(porLocal).sort((a, b) => a.nome.localeCompare(b.nome));
+    document.getElementById("tabela-locais").innerHTML = locaisList.length
+      ? locaisList.map(l => {
+          const pct = l.total ? l.conformes / l.total : 0;
+          const status = pct === 1 ? "ok" : pct >= 0.5 ? "late" : "absent";
+          const label  = pct === 1 ? "OK" : `${l.total - l.conformes} problema(s)`;
+          return `<tr>
+            <td><strong>${l.nome}</strong></td>
+            <td class="text-mono">${l.total}</td>
+            <td class="text-mono">${l.conformes}</td>
+            <td><span class="pill ${status}">${label}</span></td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="4" class="text-muted" style="padding:16px;text-align:center">Nenhum dado</td></tr>`;
+
+    // Divergências
+    divergencias.sort((a, b) => b.dist - a.dist);
+    document.getElementById("divergencias-body").innerHTML = divergencias.length
+      ? divergencias.slice(0, 5).map(d => `
+          <div class="alert-item">
+            <div class="alert-dot ${d.dist > d.raio * 3 ? 'red' : 'amber'}"></div>
+            <div style="flex:1">
+              <div class="alert-text">${d.func} — ${d.local}</div>
+              <div class="alert-time">Raio: ${d.raio}m</div>
+            </div>
+            <span class="raio-badge">${Math.round(d.dist)}m</span>
+          </div>`)
+        .join("")
+      : `<div class="empty-state"><div class="icon">✅</div><p>Nenhuma divergência significativa</p></div>`;
+
+    // Ajusta viewport para cobrir os markers
+    if (rows.length) {
+      const coords = locaisList.filter(l => l.lat && l.lng).map(l => [l.lat, l.lng]);
+      if (coords.length) map.fitBounds(coords, { padding: [30, 30] });
+    }
+
+  } catch (e) {
+    toast("Erro ao carregar dados do mapa: " + e.message, "erro");
+  }
+}
+
+function corStatus(status) {
+  return { CONFORME: "#2DC66B", ATRASO: "#F5A623", AUSENTE: "#E5534B", FORA_DO_LOCAL: "#E5534B" }[status] || "#8B9BB4";
+}
+
+function pinIcone(cor) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="28" viewBox="0 0 22 28">
+    <path d="M11 0C4.9 0 0 4.9 0 11c0 8.3 11 17 11 17s11-8.7 11-17C22 4.9 17.1 0 11 0z" fill="${cor}"/>
+    <circle cx="11" cy="11" r="4" fill="white" opacity="0.9"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    iconSize: [22, 28],
+    iconAnchor: [11, 28],
+    className: "",
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Roteiros</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { api } from "./api.js";
+import { hojeISO, formatarData, diaSemana, toast, setLoading } from "./utils.js";
+
+montarLayout("roteiros", "Roteiros do Dia Seguinte");
+
+const content = document.getElementById("content");
+
+// Data padrão = amanhã
+const amanha = new Date();
+amanha.setDate(amanha.getDate() + 1);
+const amanhaISO = amanha.toISOString().slice(0, 10);
+
+// Estado em memória
+let funcionarios = [];
+let locais = [];
+let paradasAtuais = []; // paradas carregadas do banco
+let funcSelecionado = null;
+let dataSelecionada = amanhaISO;
+
+content.innerHTML = `
+  <!-- Seletor ─────────────────────────────────────────── -->
+  <div class="card mb-16">
+    <div class="card-body" style="padding:14px 20px">
+      <div class="form-row" style="align-items:flex-end">
+        <div class="field">
+          <label>Funcionário</label>
+          <select id="sel-func"><option value="">Carregando…</option></select>
+        </div>
+        <div class="field">
+          <label>Data do Roteiro</label>
+          <input type="date" id="inp-data" value="${amanhaISO}"/>
+        </div>
+        <div>
+          <button id="btn-buscar" class="btn btn-ghost" style="width:100%;justify-content:center">🔍 Carregar Roteiro</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aviso funcionários sem roteiro -->
+  <div id="aviso-pendentes" style="display:none" class="card mb-16">
+    <div class="card-body" style="padding:12px 16px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:20px">⚠️</span>
+      <span id="txt-pendentes" style="font-size:13px;color:var(--amber)"></span>
+    </div>
+  </div>
+
+  <!-- Roteiro ──────────────────────────────────────────── -->
+  <div id="roteiro-area" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:14px">
+      <div>
+        <div id="roteiro-date-label" style="font-size:13px;font-weight:700;color:var(--teal);font-family:var(--mono)"></div>
+        <div id="roteiro-func-label" class="text-muted" style="font-size:12px;margin-top:2px"></div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button id="btn-add" class="btn btn-ghost">+ Parada</button>
+        <button id="btn-publicar" class="btn btn-primary">✔ Publicar Roteiro</button>
+      </div>
+    </div>
+
+    <div id="stops-list"></div>
+
+    <!-- Form nova parada -->
+    <div class="card" id="form-parada" style="display:none;margin-top:8px">
+      <div class="card-header"><span>➕</span><span class="card-title">Nova Parada</span></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-row">
+            <div class="field">
+              <label>Local de Atendimento</label>
+              <select id="sel-local"><option value="">-- Selecione --</option></select>
+            </div>
+            <div class="field">
+              <label>Ordem no Dia</label>
+              <input type="number" id="inp-ordem" value="1" min="1"/>
+            </div>
+          </div>
+          <div class="form-row-3">
+            <div class="field"><label>Entrada Prevista</label><input type="time" id="inp-entrada" value="08:00"/></div>
+            <div class="field"><label>Saída Prevista</label><input type="time" id="inp-saida" value="12:00"/></div>
+            <div class="field"><label>Tolerância (min)</label><input type="number" id="inp-tol" value="15"/></div>
+          </div>
+          <div class="field"><label>Observação</label><input type="text" id="inp-obs" placeholder="Opcional"/></div>
+          <div class="flex gap-10">
+            <button id="btn-salvar-parada" class="btn btn-primary">Adicionar</button>
+            <button id="btn-cancelar-parada" class="btn btn-ghost">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div style="font-size:13px;color:var(--muted);text-align:center">
+      💡 Publicar substitui o roteiro existente para esse funcionário nessa data.
+    </div>
+  </div>
+`;
+
+// ── Carregar funcionários e locais ─────────────────────────
+async function inicializar() {
+  const [funcRes, locaisRes] = await Promise.all([
+    fetch(`${window.PONTOWATCH_API_URL || 'http://localhost:8001'}/painel/monitoramento`).then(r => r.json()).catch(() => ({ registros: [] })),
+    fetch(`${window.PONTOWATCH_API_URL || 'http://localhost:8001'}/locais`).then(r => r.json()).catch(() => ({ locais: [] })),
+  ]);
+
+  // Alternativa: carrega funcionários direto do Supabase via API própria
+  // Por ora usa a lista que vem do monitoramento, ou faz GET /funcionarios
+  const funcResp = await fetch(`${window.PONTOWATCH_API_URL || 'http://localhost:8001'}/funcionarios`).then(r => r.json()).catch(() => ({ funcionarios: [] }));
+  funcionarios = funcResp.funcionarios || [];
+  locais       = locaisRes.locais || [];
+
+  const selFunc = document.getElementById("sel-func");
+  selFunc.innerHTML = `<option value="">-- Selecione --</option>` +
+    funcionarios.map(f => `<option value="${f.id}">${f.nome}</option>`).join("");
+
+  const selLocal = document.getElementById("sel-local");
+  selLocal.innerHTML = `<option value="">-- Selecione --</option>` +
+    locais.map(l => `<option value="${l.id}">${l.nome}</option>`).join("");
+
+  // Atualiza sugestão de ordem
+  document.getElementById("inp-ordem").value = paradasAtuais.length + 1;
+
+  // Verifica pendentes para amanhã
+  verificarPendentes(amanhaISO);
+}
+
+async function verificarPendentes(data) {
+  try {
+    const d = await api.roteiros.pendentes(data);
+    const aviso = document.getElementById("aviso-pendentes");
+    if (d.total > 0) {
+      document.getElementById("txt-pendentes").textContent =
+        `${d.total} funcionário(s) ainda sem roteiro cadastrado para ${formatarData(data)}.`;
+      aviso.style.display = "block";
+    } else {
+      aviso.style.display = "none";
+    }
+  } catch (_) {}
+}
+
+async function carregarRoteiro() {
+  funcSelecionado = document.getElementById("sel-func").value;
+  dataSelecionada = document.getElementById("inp-data").value;
+
+  if (!funcSelecionado || !dataSelecionada) {
+    toast("Selecione funcionário e data", "aviso");
+    return;
+  }
+
+  const btn = document.getElementById("btn-buscar");
+  setLoading(btn, true);
+
+  try {
+    const d = await api.roteiros.buscar(funcSelecionado, dataSelecionada);
+    paradasAtuais = d.paradas || [];
+    const func = funcionarios.find(f => f.id === funcSelecionado);
+    renderizarRoteiro(func, dataSelecionada, paradasAtuais);
+    verificarPendentes(dataSelecionada);
+  } catch (e) {
+    toast("Erro ao carregar roteiro: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+function renderizarRoteiro(func, data, paradas) {
+  document.getElementById("roteiro-area").style.display = "block";
+  document.getElementById("roteiro-date-label").textContent =
+    `${formatarData(data)} — ${diaSemana(data)}`;
+  document.getElementById("roteiro-func-label").textContent =
+    `${func?.nome || "—"} · ${paradas.length} parada(s)`;
+  document.getElementById("inp-ordem").value = paradas.length + 1;
+  renderizarParadas(paradas);
+}
+
+function renderizarParadas(paradas) {
+  const list = document.getElementById("stops-list");
+  if (!paradas.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>Nenhuma parada ainda. Clique em "+ Parada" para começar.</p></div>`;
+    return;
+  }
+  list.innerHTML = paradas
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((p, i) => {
+      const local = p.locais || {};
+      return `
+        <div class="stop-card">
+          <div class="stop-num">${p.ordem}</div>
+          <div style="flex:1">
+            <div class="stop-local">📍 ${local.nome || p.local_id}</div>
+            <div class="stop-meta">
+              Entrada: ${p.hora_prevista_entrada?.slice(0,5)} ·
+              Saída: ${p.hora_prevista_saida?.slice(0,5)} ·
+              Tolerância: ${p.tolerancia_min ?? 15} min ·
+              Raio: ${local.raio_aceitacao_m ?? 200}m
+              ${p.observacao ? `<br>Obs: ${p.observacao}` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="icon-btn btn-del-parada" data-id="${p.id}">🗑</button>
+          </div>
+        </div>`;
+    }).join("");
+
+  // Eventos de remoção
+  list.querySelectorAll(".btn-del-parada").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remover esta parada?")) return;
+      try {
+        await api.roteiros.delParada(btn.dataset.id);
+        paradasAtuais = paradasAtuais.filter(p => p.id !== btn.dataset.id);
+        renderizarParadas(paradasAtuais);
+        toast("Parada removida", "ok");
+      } catch (e) {
+        toast("Erro: " + e.message, "erro");
+      }
+    });
+  });
+}
+
+// ── Publicar roteiro completo ──────────────────────────────
+async function publicar() {
+  if (!funcSelecionado) { toast("Selecione um funcionário", "aviso"); return; }
+  if (!paradasAtuais.length) { toast("Adicione pelo menos uma parada", "aviso"); return; }
+
+  const btn = document.getElementById("btn-publicar");
+  setLoading(btn, true);
+  try {
+    await api.roteiros.publicar({
+      funcionario_id: funcSelecionado,
+      data_roteiro: dataSelecionada,
+      paradas: paradasAtuais.map(p => ({
+        funcionario_id: funcSelecionado,
+        data_roteiro: dataSelecionada,
+        ordem: p.ordem,
+        local_id: p.local_id,
+        hora_prevista_entrada: p.hora_prevista_entrada,
+        hora_prevista_saida: p.hora_prevista_saida,
+        tolerancia_min: p.tolerancia_min,
+        observacao: p.observacao,
+      })),
+    });
+    toast("✅ Roteiro publicado com sucesso!", "ok");
+  } catch (e) {
+    toast("Erro ao publicar: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Adicionar parada ao estado local ──────────────────────
+function adicionarParada() {
+  const localId    = document.getElementById("sel-local").value;
+  const ordem      = parseInt(document.getElementById("inp-ordem").value);
+  const entrada    = document.getElementById("inp-entrada").value;
+  const saida      = document.getElementById("inp-saida").value;
+  const tol        = parseInt(document.getElementById("inp-tol").value) || 15;
+  const obs        = document.getElementById("inp-obs").value;
+
+  if (!localId) { toast("Selecione um local", "aviso"); return; }
+  if (!entrada || !saida) { toast("Preencha os horários", "aviso"); return; }
+
+  const local = locais.find(l => l.id === localId);
+  const novaParada = {
+    id: "temp-" + Date.now(),
+    funcionario_id: funcSelecionado,
+    data_roteiro: dataSelecionada,
+    ordem, local_id: localId,
+    hora_prevista_entrada: entrada + ":00",
+    hora_prevista_saida: saida + ":00",
+    tolerancia_min: tol,
+    observacao: obs,
+    locais: local,
+  };
+
+  paradasAtuais.push(novaParada);
+  paradasAtuais.sort((a, b) => a.ordem - b.ordem);
+  renderizarParadas(paradasAtuais);
+  document.getElementById("form-parada").style.display = "none";
+  document.getElementById("inp-ordem").value = paradasAtuais.length + 1;
+  toast("Parada adicionada", "ok");
+}
+
+// ── Eventos ────────────────────────────────────────────────
+document.getElementById("btn-buscar").addEventListener("click", carregarRoteiro);
+document.getElementById("btn-publicar").addEventListener("click", publicar);
+document.getElementById("btn-add").addEventListener("click", () => {
+  document.getElementById("form-parada").style.display = "block";
+});
+document.getElementById("btn-cancelar-parada").addEventListener("click", () => {
+  document.getElementById("form-parada").style.display = "none";
+});
+document.getElementById("btn-salvar-parada").addEventListener("click", adicionarParada);
+
+inicializar();
+</script>
+</body>
+</html>

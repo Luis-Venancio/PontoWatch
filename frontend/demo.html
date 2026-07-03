@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:#0F1E36; --navy2:#162844; --navy3:#1E3558;
+      --teal:#00C9A7; --teal2:#00A389;
+      --amber:#F5A623; --red:#E5534B; --green:#2DC66B;
+      --slate:#8B9BB4; --slate2:#C4CFDE;
+      --card:#182D4A; --border:#243D5F; --text:#E8EFF8; --muted:#8B9BB4;
+      --mono:'DM Mono', monospace;
+    }
+    body { font-family:'Inter',sans-serif; background:var(--navy); color:var(--text); min-height:100vh; display:flex; overflow:hidden; }
+
+    /* Sidebar */
+    .sidebar { width:220px; min-width:220px; background:var(--navy2); border-right:1px solid var(--border); display:flex; flex-direction:column; height:100vh; }
+    .logo { padding:20px; border-bottom:1px solid var(--border); }
+    .logo-mark { font-size:11px; font-weight:600; letter-spacing:2px; color:var(--teal); text-transform:uppercase; }
+    .logo-name { font-size:17px; font-weight:700; color:#fff; margin-top:2px; }
+    .nav { flex:1; padding:12px 0; overflow-y:auto; }
+    .nav-section { padding:8px 16px 4px; font-size:10px; font-weight:600; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; }
+    .nav-item { display:flex; align-items:center; gap:10px; padding:9px 16px; margin:1px 8px; border-radius:8px; cursor:pointer; font-size:13.5px; font-weight:500; color:var(--slate2); text-decoration:none; }
+    .nav-item:hover { background:var(--navy3); color:var(--text); }
+    .nav-item.active { background:rgba(0,201,167,.12); color:var(--teal); }
+    .nav-item .icon { font-size:16px; width:20px; text-align:center; }
+    .badge { margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; }
+    .sidebar-footer { padding:14px 16px; border-top:1px solid var(--border); }
+    .user-chip { display:flex; align-items:center; gap:10px; }
+    .avatar { width:30px; height:30px; border-radius:50%; background:var(--teal2); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; flex-shrink:0; }
+    .user-name { font-size:12.5px; font-weight:600; }
+    .user-role { font-size:11px; color:var(--muted); }
+
+    /* Main */
+    .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+    .topbar { height:56px; background:var(--navy2); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 24px; gap:12px; flex-shrink:0; }
+    .topbar-title { font-size:15px; font-weight:600; }
+    .topbar-date { font-size:12px; color:var(--muted); margin-left:auto; font-family:var(--mono); }
+    .content { flex:1; overflow-y:auto; padding:24px; }
+
+    /* KPI */
+    .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+    .kpi { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; position:relative; overflow:hidden; }
+    .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+    .kpi.green::before { background:var(--green); } .kpi.red::before { background:var(--red); }
+    .kpi.amber::before { background:var(--amber); } .kpi.teal::before { background:var(--teal); }
+    .kpi-label { font-size:11px; font-weight:600; letter-spacing:.5px; color:var(--muted); text-transform:uppercase; }
+    .kpi-value { font-size:32px; font-weight:700; line-height:1.1; margin:4px 0; font-family:var(--mono); }
+    .kpi-sub { font-size:12px; color:var(--muted); }
+    .kpi-icon { position:absolute; right:16px; top:50%; transform:translateY(-40%); font-size:28px; opacity:.2; }
+
+    /* Cards */
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; }
+    .card-header { padding:16px 20px 12px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+    .card-title { font-size:14px; font-weight:600; }
+    .card-body { padding:20px; }
+
+    /* Grid */
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    .flex { display:flex; align-items:center; }
+    .ml-auto { margin-left:auto; }
+    .gap-10 { gap:10px; }
+    .mb-16 { margin-bottom:16px; }
+    .mb-10 { margin-bottom:10px; }
+    .text-muted { color:var(--muted); font-size:12px; }
+
+    /* Pills */
+    .pill { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; }
+    .pill::before { content:''; width:6px; height:6px; border-radius:50%; }
+    .pill.ok     { background:rgba(45,198,107,.12); color:var(--green); } .pill.ok::before { background:var(--green); }
+    .pill.absent { background:rgba(229,83,75,.12);  color:var(--red);   } .pill.absent::before { background:var(--red); }
+    .pill.late   { background:rgba(245,166,35,.12); color:var(--amber); } .pill.late::before { background:var(--amber); }
+    .pill.geo    { background:rgba(229,83,75,.12);  color:var(--red);   } .pill.geo::before { background:var(--red); }
+
+    /* Tabela */
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    thead th { padding:10px 14px; text-align:left; font-size:11px; font-weight:600; letter-spacing:.5px; color:var(--muted); text-transform:uppercase; border-bottom:1px solid var(--border); }
+    tbody td { padding:11px 14px; border-bottom:1px solid rgba(36,61,95,.5); vertical-align:middle; }
+    tbody tr:hover td { background:rgba(255,255,255,.02); }
+    tbody tr:last-child td { border-bottom:none; }
+    .text-mono { font-family:var(--mono); }
+    .tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(0,201,167,.1); color:var(--teal); border:1px solid rgba(0,201,167,.2); }
+
+    /* Alertas */
+    .alert-item { display:flex; align-items:flex-start; gap:12px; padding:12px 0; border-bottom:1px solid rgba(36,61,95,.5); }
+    .alert-item:last-child { border-bottom:none; }
+    .alert-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px; }
+    .alert-dot.red   { background:var(--red);   box-shadow:0 0 6px var(--red); }
+    .alert-dot.amber { background:var(--amber); box-shadow:0 0 6px var(--amber); }
+    .alert-text { font-size:13px; line-height:1.4; }
+    .alert-time { font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:2px; }
+    .alert-level { font-size:10px; font-weight:700; padding:2px 7px; border-radius:4px; white-space:nowrap; flex-shrink:0; }
+    .alert-level.l2 { background:rgba(245,166,35,.15); color:var(--amber); }
+    .alert-level.l3 { background:rgba(229,83,75,.15);  color:var(--red); }
+
+    /* Progress */
+    .progress-bar  { height:6px; background:var(--navy3); border-radius:3px; overflow:hidden; }
+    .progress-fill { height:100%; border-radius:3px; }
+
+    /* Btn */
+    .btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; font-family:inherit; }
+    .btn-ghost { background:transparent; color:var(--slate2); border:1px solid var(--border); }
+    .btn-primary { background:var(--teal); color:var(--navy); }
+
+    /* Demo badge */
+    .demo-banner { background:rgba(245,166,35,.12); border:1px solid rgba(245,166,35,.3); color:var(--amber); font-size:12px; font-weight:600; padding:6px 16px; border-radius:8px; text-align:center; margin-bottom:20px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+  </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ─────────────────────────────────────────── -->
+<div class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">RH · Automação</div>
+    <div class="logo-name">Ponto<span style="color:var(--teal)">Watch</span></div>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">Operação</div>
+    <a class="nav-item active" href="#"><span class="icon">📊</span> Painel Hoje</a>
+    <a class="nav-item" href="#"><span class="icon">📋</span> Roteiros</a>
+    <a class="nav-item" href="#"><span class="icon">🗺️</span> Mapa ao Vivo</a>
+    <a class="nav-item" href="#"><span class="icon">🔔</span> Alertas <span class="badge">3</span></a>
+    <div class="nav-section">Cadastros</div>
+    <a class="nav-item" href="#"><span class="icon">📍</span> Locais</a>
+    <a class="nav-item" href="#"><span class="icon">👤</span> Funcionários</a>
+    <div class="nav-section">Análise</div>
+    <a class="nav-item" href="#"><span class="icon">📈</span> Histórico</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar">GC</div>
+      <div>
+        <div class="user-name">Gestor Central</div>
+        <div class="user-role">Coordenador RH</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAIN ────────────────────────────────────────────── -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">Painel de Hoje</div>
+    <div class="topbar-date" id="relogio"></div>
+  </div>
+
+  <div class="content">
+
+    <!-- Banner demo -->
+    <div class="demo-banner">⚡ Modo demonstração — dados fictícios para apresentação</div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi green">
+        <div class="kpi-label">Conformes</div>
+        <div class="kpi-value">8</div>
+        <div class="kpi-sub">de 12 registros</div>
+        <div class="kpi-icon">✅</div>
+      </div>
+      <div class="kpi red">
+        <div class="kpi-label">Ausências</div>
+        <div class="kpi-value">2</div>
+        <div class="kpi-sub">sem registro</div>
+        <div class="kpi-icon">⚠️</div>
+      </div>
+      <div class="kpi amber">
+        <div class="kpi-label">Atrasos</div>
+        <div class="kpi-value">1</div>
+        <div class="kpi-sub">acima da tolerância</div>
+        <div class="kpi-icon">⏱️</div>
+      </div>
+      <div class="kpi teal">
+        <div class="kpi-label">Fora do Local</div>
+        <div class="kpi-value">1</div>
+        <div class="kpi-sub">divergência GPS</div>
+        <div class="kpi-icon">📍</div>
+      </div>
+    </div>
+
+    <!-- Equipes + Alertas -->
+    <div class="grid-2">
+
+      <!-- Conformidade por equipe -->
+      <div class="card">
+        <div class="card-header"><span>👥</span><span class="card-title">Conformidade por Equipe</span></div>
+        <div class="card-body">
+
+          <div style="margin-bottom:16px">
+            <div class="flex mb-10 gap-10">
+              <span style="font-size:13px;font-weight:600">Equipe Norte</span>
+              <span class="ml-auto text-muted">4/4</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div>
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div class="flex mb-10 gap-10">
+              <span style="font-size:13px;font-weight:600">Equipe Sul</span>
+              <span class="ml-auto text-muted">3/4</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:75%;background:var(--amber)"></div></div>
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div class="flex mb-10 gap-10">
+              <span style="font-size:13px;font-weight:600">Equipe Centro</span>
+              <span class="ml-auto text-muted">1/4</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:25%;background:var(--red)"></div></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Alertas recentes -->
+      <div class="card">
+        <div class="card-header">
+          <span>🔔</span><span class="card-title">Alertas Recentes</span>
+          <a href="#" class="btn btn-ghost ml-auto" style="font-size:12px;padding:5px 10px">Ver todos</a>
+        </div>
+        <div class="card-body">
+
+          <div class="alert-item">
+            <div class="alert-dot red"></div>
+            <div style="flex:1">
+              <div class="alert-text">Marcos Lima não registrou presença em "Sub. Lapa" (previsto: 07:00).</div>
+              <div class="alert-time">07:35 · Gerado automaticamente</div>
+            </div>
+            <div class="alert-level l3">CRÍTICO</div>
+          </div>
+
+          <div class="alert-item">
+            <div class="alert-dot red"></div>
+            <div style="flex:1">
+              <div class="alert-text">Fernanda Souza não registrou presença em "Antena Jabaquara" (previsto: 08:00).</div>
+              <div class="alert-time">08:32 · Gerado automaticamente</div>
+            </div>
+            <div class="alert-level l3">CRÍTICO</div>
+          </div>
+
+          <div class="alert-item">
+            <div class="alert-dot amber"></div>
+            <div style="flex:1">
+              <div class="alert-text">Lucas Oliveira bateu ponto a 430m de "Estação Mooca" (raio aceito: 200m).</div>
+              <div class="alert-time">09:05 · Gerado automaticamente</div>
+            </div>
+            <div class="alert-level l2">ATENÇÃO</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabela de monitoramento -->
+    <div class="card">
+      <div class="card-header">
+        <span>📋</span><span class="card-title">Monitoramento em Tempo Real</span>
+        <div class="ml-auto flex gap-10">
+          <button class="btn btn-ghost" style="font-size:12px;padding:5px 10px">⟳ Atualizar</button>
+          <button class="btn btn-primary" style="font-size:12px;padding:5px 10px">▶ Rodar Job</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Funcionário</th>
+                <th>Local Previsto</th>
+                <th>Parada</th>
+                <th>Entrada Prev.</th>
+                <th>Entrada Real</th>
+                <th>Δ</th>
+                <th>GPS</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Ana Santos</strong><br><span class="text-muted" style="font-size:11px">Equipe Sul</span></td>
+                <td>Sub. Bela Vista</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">07:00</td>
+                <td class="text-mono">06:58</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−2 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 45m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Carlos Silva</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Torre Butantã</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">07:30</td>
+                <td class="text-mono">07:28</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−2 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 88m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Marcos Lima</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Sub. Lapa</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">07:00</td>
+                <td class="text-mono">—</td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span class="pill absent">Ausente</span></td>
+              </tr>
+              <tr>
+                <td><strong>Pedro Costa</strong><br><span class="text-muted" style="font-size:11px">Equipe Sul</span></td>
+                <td>Sub. Bela Vista</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">08:00</td>
+                <td class="text-mono">08:22</td>
+                <td><span style="color:var(--amber);font-family:var(--mono)">+22 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 112m</span></td>
+                <td><span class="pill late">Atraso</span></td>
+              </tr>
+              <tr>
+                <td><strong>Roberto Alves</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Torre Butantã</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">09:00</td>
+                <td class="text-mono">08:57</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−3 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 67m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Juliana Ferreira</strong><br><span class="text-muted" style="font-size:11px">Equipe Sul</span></td>
+                <td>Sub. Santana</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">08:30</td>
+                <td class="text-mono">08:29</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−1 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 33m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Lucas Oliveira</strong><br><span class="text-muted" style="font-size:11px">Equipe Centro</span></td>
+                <td>Estação Mooca</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">09:00</td>
+                <td class="text-mono">09:04</td>
+                <td><span style="color:var(--amber);font-family:var(--mono)">+4 min</span></td>
+                <td><span style="color:var(--red);font-family:var(--mono)">⚠️ 430m</span></td>
+                <td><span class="pill geo">Fora do local</span></td>
+              </tr>
+              <tr>
+                <td><strong>Fernanda Souza</strong><br><span class="text-muted" style="font-size:11px">Equipe Centro</span></td>
+                <td>Antena Jabaquara</td>
+                <td><span class="tag">1ª parada</span></td>
+                <td class="text-mono">08:00</td>
+                <td class="text-mono">—</td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span class="pill absent">Ausente</span></td>
+              </tr>
+              <tr>
+                <td><strong>Marcos Lima</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Sub. Lapa</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">13:00</td>
+                <td class="text-mono">—</td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span style="color:var(--muted);font-family:var(--mono)">—</span></td>
+                <td><span class="pill absent">Ausente</span></td>
+              </tr>
+              <tr>
+                <td><strong>Carlos Silva</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Sub. Santana</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">14:00</td>
+                <td class="text-mono">13:58</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−2 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 95m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Ana Santos</strong><br><span class="text-muted" style="font-size:11px">Equipe Sul</span></td>
+                <td>Torre Butantã</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">14:30</td>
+                <td class="text-mono">14:27</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−3 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 71m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+              <tr>
+                <td><strong>Roberto Alves</strong><br><span class="text-muted" style="font-size:11px">Equipe Norte</span></td>
+                <td>Antena Jabaquara</td>
+                <td><span class="tag">2ª parada</span></td>
+                <td class="text-mono">15:00</td>
+                <td class="text-mono">14:59</td>
+                <td><span style="color:var(--green);font-family:var(--mono)">−1 min</span></td>
+                <td><span style="color:var(--green);font-family:var(--mono)">✅ 55m</span></td>
+                <td><span class="pill ok">Conforme</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+  // Relógio no topbar
+  function tick() {
+    const now  = new Date();
+    const dias = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+    const mes  = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    document.getElementById("relogio").textContent =
+      `${dias[now.getDay()]}, ${now.getDate()} ${mes[now.getMonth()]} ${now.getFullYear()} · ` +
+      `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  }
+  tick();
+  setInterval(tick, 30000);
+</script>
+</body>
+</html>

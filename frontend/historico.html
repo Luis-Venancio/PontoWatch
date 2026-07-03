@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PontoWatch — Histórico</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<script type="module">
+import { montarLayout } from "./layout.js";
+import { pillStatus, formatarData, toast } from "./utils.js";
+
+montarLayout("historico", "Histórico de Conformidade");
+
+const API = window.PONTOWATCH_API_URL || "http://localhost:8001";
+const content = document.getElementById("content");
+
+// Intervalo padrão: últimos 7 dias
+const hoje = new Date();
+const seteDiasAtras = new Date(hoje);
+seteDiasAtras.setDate(hoje.getDate() - 6);
+
+const fmtISO = (d) => d.toISOString().slice(0, 10);
+
+content.innerHTML = `
+  <!-- Filtros -->
+  <div class="card mb-16">
+    <div class="card-body" style="padding:14px 20px">
+      <div class="form-row" style="align-items:flex-end;gap:12px">
+        <div class="field">
+          <label>Data Inicial</label>
+          <input type="date" id="inp-inicio" value="${fmtISO(seteDiasAtras)}"/>
+        </div>
+        <div class="field">
+          <label>Data Final</label>
+          <input type="date" id="inp-fim" value="${fmtISO(hoje)}"/>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Funcionário</label>
+          <select id="sel-func"><option value="">Todos</option></select>
+        </div>
+        <div class="field" style="flex:1">
+          <label>Status</label>
+          <select id="sel-status">
+            <option value="">Todos</option>
+            <option value="CONFORME">Conforme</option>
+            <option value="AUSENTE">Ausente</option>
+            <option value="ATRASO">Atraso</option>
+            <option value="FORA_DO_LOCAL">Fora do Local</option>
+          </select>
+        </div>
+        <div>
+          <button id="btn-buscar" class="btn btn-primary">🔍 Buscar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs do período -->
+  <div class="kpi-grid" id="kpis-periodo" style="margin-bottom:16px">
+    <div class="kpi green"><div class="kpi-label">Conformes</div><div class="kpi-value" id="kpi-conf">—</div><div class="kpi-icon">✅</div></div>
+    <div class="kpi red"><div class="kpi-label">Ausências</div><div class="kpi-value" id="kpi-aus">—</div><div class="kpi-icon">⚠️</div></div>
+    <div class="kpi amber"><div class="kpi-label">Atrasos</div><div class="kpi-value" id="kpi-atr">—</div><div class="kpi-icon">⏱️</div></div>
+    <div class="kpi teal"><div class="kpi-label">% Conformidade</div><div class="kpi-value" id="kpi-pct">—</div><div class="kpi-icon">📊</div></div>
+  </div>
+
+  <!-- Gráfico de barras por dia -->
+  <div class="card mb-16">
+    <div class="card-header"><span>📈</span><span class="card-title">Conformidade por Dia</span></div>
+    <div class="card-body" id="grafico-body" style="padding:20px 24px">
+      <div class="text-muted" style="text-align:center;padding:24px">Selecione um período e clique em Buscar</div>
+    </div>
+  </div>
+
+  <!-- Tabela de registros -->
+  <div class="card">
+    <div class="card-header">
+      <span>📋</span><span class="card-title">Registros do Período</span>
+      <span id="contador" class="ml-auto text-muted"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Funcionário</th>
+              <th>Equipe</th>
+              <th>Local</th>
+              <th>Entrada Prev.</th>
+              <th>Entrada Real</th>
+              <th>Δ min</th>
+              <th>GPS</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="9" class="text-muted" style="text-align:center;padding:48px">
+              Selecione o período e clique em Buscar para visualizar o histórico.
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+`;
+
+// ── Carregar funcionários para o filtro ────────────────────
+async function carregarFuncionarios() {
+  try {
+    const res = await fetch(`${API}/funcionarios/`);
+    const data = await res.json();
+    const sel = document.getElementById("sel-func");
+    (data.funcionarios || []).forEach(f => {
+      const opt = document.createElement("option");
+      opt.value = f.id;
+      opt.textContent = f.nome;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+// ── Buscar histórico ───────────────────────────────────────
+async function buscar() {
+  const inicio   = document.getElementById("inp-inicio").value;
+  const fim      = document.getElementById("inp-fim").value;
+  const statusFiltro = document.getElementById("sel-status").value;
+  const funcFiltro   = document.getElementById("sel-func").value;
+
+  if (!inicio || !fim) { toast("Informe o período", "aviso"); return; }
+  if (inicio > fim)    { toast("Data inicial deve ser anterior à final", "aviso"); return; }
+
+  const btn = document.getElementById("btn-buscar");
+  btn.disabled = true;
+  btn.textContent = "Buscando…";
+
+  try {
+    // Busca os dias do intervalo um a um e agrega
+    const dias = gerarDias(inicio, fim);
+    const resultados = await Promise.all(
+      dias.map(dia =>
+        fetch(`${API}/painel/monitoramento?dia=${dia}`)
+          .then(r => r.json())
+          .then(d => (d.registros || []).map(r => ({ ...r, _dia: dia })))
+          .catch(() => [])
+      )
+    );
+
+    let todos = resultados.flat();
+
+    // Filtra por status e funcionário se selecionados
+    if (statusFiltro) todos = todos.filter(r => r.status_presenca === statusFiltro);
+    if (funcFiltro)   todos = todos.filter(r => (r.funcionarios?.id || r.funcionario_id) === funcFiltro);
+
+    atualizarKPIs(todos);
+    renderizarGrafico(dias, resultados);
+    renderizarTabela(todos);
+
+  } catch (e) {
+    toast("Erro ao buscar histórico: " + e.message, "erro");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔍 Buscar";
+  }
+}
+
+function gerarDias(inicio, fim) {
+  const dias = [];
+  const d = new Date(inicio + "T12:00:00");
+  const f = new Date(fim    + "T12:00:00");
+  while (d <= f) {
+    dias.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+  return dias;
+}
+
+function atualizarKPIs(registros) {
+  const total     = registros.length;
+  const conformes = registros.filter(r => r.status_presenca === "CONFORME").length;
+  const ausentes  = registros.filter(r => r.status_presenca === "AUSENTE").length;
+  const atrasos   = registros.filter(r => r.status_presenca === "ATRASO").length;
+  const pct       = total ? Math.round(conformes / total * 100) : 0;
+
+  document.getElementById("kpi-conf").textContent = conformes;
+  document.getElementById("kpi-aus").textContent  = ausentes;
+  document.getElementById("kpi-atr").textContent  = atrasos;
+  document.getElementById("kpi-pct").textContent  = `${pct}%`;
+}
+
+function renderizarGrafico(dias, resultadosPorDia) {
+  const corpo = document.getElementById("grafico-body");
+
+  // Calcula % conformidade por dia
+  const pontos = dias.map((dia, i) => {
+    const regs = resultadosPorDia[i] || [];
+    const total     = regs.length;
+    const conformes = regs.filter(r => r.status_presenca === "CONFORME").length;
+    const pct = total ? Math.round(conformes / total * 100) : null;
+    return { dia, pct, total, conformes };
+  });
+
+  const maxAltura = 120;
+
+  corpo.innerHTML = `
+    <div style="display:flex;align-items:flex-end;gap:6px;height:${maxAltura + 40}px;overflow-x:auto">
+      ${pontos.map(p => {
+        const altura = p.total ? Math.max(8, Math.round((p.pct / 100) * maxAltura)) : 6;
+        const cor    = p.total === 0 ? 'var(--border)'
+                     : p.pct >= 80  ? 'var(--green)'
+                     : p.pct >= 50  ? 'var(--amber)'
+                     : 'var(--red)';
+        const label  = formatarData(p.dia).slice(0, 5); // "DD/MM"
+        return `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:32px" title="${p.dia}: ${p.pct ?? '—'}% (${p.conformes}/${p.total})">
+            <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${p.pct !== null ? p.pct + '%' : '—'}</span>
+            <div style="width:100%;background:${cor};border-radius:4px 4px 0 0;height:${altura}px;transition:height .3s"></div>
+            <span style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap">${label}</span>
+          </div>`;
+      }).join("")}
+    </div>
+    <div style="display:flex;gap:16px;margin-top:12px;justify-content:center">
+      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px">
+        <span style="width:10px;height:10px;border-radius:2px;background:var(--green);display:inline-block"></span>≥ 80%
+      </span>
+      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px">
+        <span style="width:10px;height:10px;border-radius:2px;background:var(--amber);display:inline-block"></span>50–79%
+      </span>
+      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px">
+        <span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block"></span>< 50%
+      </span>
+    </div>
+  `;
+}
+
+function renderizarTabela(registros) {
+  document.getElementById("contador").textContent = `${registros.length} registro(s)`;
+
+  if (!registros.length) {
+    document.getElementById("tabela-body").innerHTML =
+      `<tr><td colspan="9"><div class="empty-state"><div class="icon">📋</div><p>Nenhum registro encontrado para os filtros selecionados.</p></div></td></tr>`;
+    return;
+  }
+
+  // Ordena por data desc, depois por nome
+  const ordenados = [...registros].sort((a, b) => {
+    if (b._dia !== a._dia) return b._dia.localeCompare(a._dia);
+    return (a.funcionarios?.nome || "").localeCompare(b.funcionarios?.nome || "");
+  });
+
+  document.getElementById("tabela-body").innerHTML = ordenados.map(r => {
+    const f    = r.funcionarios || {};
+    const l    = r.locais || {};
+    const atr  = r.minutos_atraso_entrada;
+    const dist = r.distancia_entrada_m;
+    const raio = l.raio_aceitacao_m || 200;
+
+    const deltaHtml = atr === null || atr === undefined
+      ? '<span class="text-muted">—</span>'
+      : `<span style="color:${atr <= 0 ? 'var(--green)' : atr <= 15 ? 'var(--amber)' : 'var(--red)'};font-family:var(--mono)">${atr > 0 ? '+' : ''}${atr}</span>`;
+
+    const gpsHtml = dist === null || dist === undefined
+      ? '<span class="text-muted">—</span>'
+      : `<span style="color:${dist <= raio ? 'var(--green)' : 'var(--red)'};font-family:var(--mono)">${Math.round(dist)}m</span>`;
+
+    return `
+      <tr>
+        <td class="text-mono" style="font-size:12px">${formatarData(r._dia)}</td>
+        <td><strong>${f.nome || "—"}</strong></td>
+        <td>${f.equipe ? `<span class="tag">${f.equipe}</span>` : '<span class="text-muted">—</span>'}</td>
+        <td>${l.nome || '<span class="text-muted">—</span>'}</td>
+        <td class="text-mono">${(r.hora_prevista_entrada || "—").slice(0,5)}</td>
+        <td class="text-mono">${(r.hora_real_entrada || "—").slice(0,5)}</td>
+        <td>${deltaHtml}</td>
+        <td>${gpsHtml}</td>
+        <td>${pillStatus(r.status_presenca)}</td>
+      </tr>`;
+  }).join("");
+}
+
+// ── Eventos ────────────────────────────────────────────────
+document.getElementById("btn-buscar").addEventListener("click", buscar);
+
+// Enter nos inputs de data também dispara a busca
+["inp-inicio", "inp-fim"].forEach(id => {
+  document.getElementById(id).addEventListener("keydown", e => {
+    if (e.key === "Enter") buscar();
+  });
+});
+
+// ── Inicializar ────────────────────────────────────────────
+carregarFuncionarios();
+</script>
+</body>
+</html>
