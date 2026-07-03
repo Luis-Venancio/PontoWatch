@@ -9,8 +9,11 @@ from contextlib import asynccontextmanager
 from datetime import date
 from loguru import logger
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -82,7 +85,7 @@ app.include_router(funcionarios.router)
 # Endpoints utilitários
 # ──────────────────────────────────────────────────────────────
 
-@app.get("/")
+@app.get("/health")
 def health():
     return {"status": "ok", "app": "PontoWatch"}
 
@@ -104,3 +107,12 @@ def proximo_job():
     if not job:
         return {"erro": "Job não encontrado"}
     return {"proxima_execucao": str(job.next_run_time)}
+
+
+# ──────────────────────────────────────────────────────────────
+# Frontend (arquivos estáticos) — montado por último para não
+# conflitar com as rotas de API acima.
+# ──────────────────────────────────────────────────────────────
+
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")

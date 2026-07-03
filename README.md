@@ -1,6 +1,7 @@
-# PontoWatch — Backend
+# PontoWatch
 
-API FastAPI que integra o **Ponto Mais** com o **Supabase** para monitoramento de ponto e geolocalização.
+Aplicação FastAPI (backend + frontend servidos juntos, mesmo processo) que integra
+o **Ponto Mais** com o **Supabase** para monitoramento de ponto e geolocalização.
 
 ---
 
@@ -9,7 +10,7 @@ API FastAPI que integra o **Ponto Mais** com o **Supabase** para monitoramento d
 ```
 pontowatch/
 ├── app/
-│   ├── main.py                    # FastAPI + scheduler
+│   ├── main.py                    # FastAPI + scheduler + monta frontend/ como estático
 │   ├── core/
 │   │   ├── config.py              # Settings (lê .env)
 │   │   └── database.py            # Cliente Supabase
@@ -23,6 +24,8 @@ pontowatch/
 │       ├── comparacao_engine.py   # Motor previsto × real + Haversine
 │       ├── job_diario.py          # Orquestrador do job
 │       └── notificacoes.py        # Envio de e-mails
+├── frontend/                      # HTML/JS estático, servido pelo próprio FastAPI
+├── Procfile                       # Comando de start (Railway)
 ├── requirements.txt
 └── .env.example
 ```
@@ -47,11 +50,14 @@ cp .env.example .env
 # 4. Rodar o banco de dados
 # Execute o schema_supabase_ponto.sql no Supabase SQL Editor
 
-# 5. Iniciar a API
+# 5. Iniciar a aplicação (backend + frontend juntos)
 uvicorn app.main:app --reload --port 8001
 ```
 
-Acesse: http://localhost:8001/docs (Swagger interativo)
+Acesse:
+- http://localhost:8001/ — Frontend (painel, roteiros, mapa, etc.)
+- http://localhost:8001/docs — Swagger interativo da API
+- http://localhost:8001/health — Health check
 
 ---
 
@@ -101,7 +107,10 @@ Acesse: http://localhost:8001/docs (Swagger interativo)
 
 ---
 
-## Deploy (Railway — gratuito)
+## Deploy (Railway)
+
+Backend e frontend são um único serviço (mesmo processo, mesma porta), então
+o deploy é um só passo — não há CORS nem URLs separadas para configurar.
 
 ```bash
 # 1. Instale o Railway CLI
@@ -116,6 +125,7 @@ railway up
 # Settings → Variables → adicione todas do .env
 ```
 
+O `Procfile` já define o comando de start (`uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
 Alternativa: **Render.com** (mesma facilidade, plano gratuito disponível).
 
 ---

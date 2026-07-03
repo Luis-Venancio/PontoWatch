@@ -1,9 +1,8 @@
 /**
- * config.js — EDITE ESTE ARQUIVO antes do deploy
+ * config.js
  *
- * Aponte para o URL do seu backend FastAPI:
- *   - Local:      http://localhost:8001
- *   - Railway:    https://pontowatch.up.railway.app
- *   - Render:     https://pontowatch.onrender.com
+ * Frontend e backend são servidos pelo mesmo processo FastAPI
+ * (StaticFiles montado em app/main.py), então a API sempre está
+ * na mesma origem — não precisa editar nada antes do deploy.
  */
-window.PONTOWATCH_API_URL = "http://localhost:8001";
+window.PONTOWATCH_API_URL = window.location.origin;
