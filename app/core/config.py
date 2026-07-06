@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     # Ponto Mais
     pm_api_token: str = ""
     pm_api_base_url: str = "https://api.pontomais.com.br/external_api/v1"
+    pontomais_webhook_token: str = ""
 
     # Supabase
     supabase_url: str = ""

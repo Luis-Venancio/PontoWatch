@@ -18,7 +18,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import get_settings
-from app.api import painel, roteiros, alertas, locais, funcionarios
+from app.api import painel, roteiros, alertas, locais, funcionarios, webhooks
 from app.services.job_diario import executar_job
 
 
@@ -79,6 +79,7 @@ app.include_router(roteiros.router)
 app.include_router(alertas.router)
 app.include_router(locais.router)
 app.include_router(funcionarios.router)
+app.include_router(webhooks.router)
 
 
 # ──────────────────────────────────────────────────────────────

@@ -4794,6 +4794,14 @@ https://api.pontomais.com.br/external_api/v1/reports/time_cards
 
 Rota para extração do relatório de registros de ponto (batidas de entrada/saída dos colaboradores) — **inclui a geolocalização de cada batida**. É este o endpoint que retorna a "posição global" do colaborador no momento do registro de ponto.
 
+**Variáveis na URL**
+
+| Nome | Descrição |
+|---|---|
+| csv_token | Token do cliente |
+
+> **Nota (confirmado em 2026-07-06 via PDF exportado do Postman pelo usuário):** `csv_token` é um parâmetro de **query string** (não header) — usado quando `format: "csv"` é solicitado, provavelmente porque a resposta CSV é servida como download direto de arquivo (`Content-Disposition: attachment; filename="Report.csv"`), cenário em que não dá pra anexar o header `access-token` normal (ex: se o link for aberto direto no navegador). Para `format: "json"` (o que o PontoWatch usa hoje em `pontomais_client.py`), o header `access-token` já documentado abaixo funciona normalmente — `csv_token` só é relevante se decidirmos oferecer exportação CSV direta no futuro.
+
 **Estrutura do objeto JSON a ser enviado**
 
 | Nome | Tipo | Obrigatório | Descrição |
@@ -4925,6 +4933,30 @@ curl --location 'https://api.pontomais.com.br/external_api/v1/reports/time_cards
   ]
 }
 ```
+
+**Exemplo de resposta com `format: "csv"`** (confirmado em 2026-07-06 via PDF exportado pelo usuário) — vem como download de arquivo, não JSON:
+
+```
+Relatório de Registros de ponto
+Por Alex Lam em 21/11/2018
+De 04/09/2018 até 05/09/2018
+
+Equipe,Administração
+Nome,PIS,Matrícula,Cargo,Equipe,Turno,Data,Hora,Método,Endereço aprox. detectado,Endereço aprox. editado,Ajustado,Motivo do ajuste,Quem ajustou,Fotografia,IP,Tipo do registro,Origem,Horário Local,Precisão (m),Geolocalização,Geolocalização original
+Darth vader,074.42618.31-7,0001,Gerente geral,Administração,turno ciclico,"Ter, 04/09/2018",08:00,Ajuste de ponto,,,Sim,Ajuste,Alex Lam,,,1ª Entrada,Inserido por ajuste de ponto,Sem localização,,,
+...
+Resumo,Totais
+Total,8
+```
+
+**Headers da resposta CSV (relevantes):**
+
+| Header | Valor |
+|---|---|
+| Content-Type | `text/csv; charset=utf-8` |
+| Content-Disposition | `attachment; filename="Report.csv"` |
+
+> Confirma que `format: "csv"` retorna um arquivo para download (não um JSON com string CSV embutida) — coerente com o `csv_token` de query string documentado acima, já que downloads diretos de arquivo não carregam headers customizados. O PontoWatch usa exclusivamente `format: "json"` hoje (`pontomais_client.py`), então isso não afeta o código atual.
 
 > **[PENDENTE]** Demais 26 relatórios da pasta Relatórios, e as pastas: Afastamentos, Preferências (Configurações de Controle de Ponto), Preferências (Configurações de férias), Exportação Folha, Exceções de jornada, Abonos, Webhooks, Banco cascata.
 | main_interval_after | Boolean | Não — true se o intervalo principal ocorre imediatamente após esse período |
@@ -6205,6 +6237,230 @@ Relatório de fechamento. Identificado pelo `report_id: "closing_mirrors"` no ex
 
 ---
 
+## Webhooks
+
+> Capturado em 2026-07-06 via Playwright (não estava nem no arquivo nem tinha sido clicado antes — só a introdução tinha sido vista incidentalmente).
+
+Webhook é uma forma de recebimento de informações, passadas quando um evento acontece. Dessa forma, o webhook na prática, é a forma de receber informações entre dois sistemas de uma forma passiva.
+
+> **OBS:** Quando utilizar token ele será enviado no header da request no seguinte parâmetro: `{"token": "your_token"}`
+
+> Nota: a documentação pública não descreve um endpoint de API para **inscrever/cadastrar a URL de callback** do webhook — seguindo o mesmo padrão de "Preferências" e outras configurações da conta, isso deve ser feito pela **plataforma web** (Configurações), não por chamada de API. Não confirmado nesta sessão onde exatamente na tela de Configurações isso fica.
+
+### Evento Registro de Ponto
+
+Evento que ocorre quando o colaborador registra a sua jornada (bate o ponto).
+
+**Estrutura do objeto JSON a ser recebido**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| date | Date | Data do registro |
+| time | Time | Hora do registro (HH:MM) |
+| address | String | Local do Registro do Ponto |
+| employee | Object | Colaborador |
+
+**Formato do objeto `employee`**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| id | Integer | ID do colaborador |
+| name | String (100) | Nome completo |
+| nis | String (14) | Número de Identificação Social (NIS) |
+| email | String (60) | E-mail |
+| cpf | String (14) | CPF |
+| registration_number | String (15) | Matrícula |
+| team | Object | Equipe |
+
+**Exemplo:**
+
+```json
+{
+  "date": "2022-07-27",
+  "time": "15:07",
+  "address": "Alameda Joaquim Eugênio de Lima, 1118 - Jardim Paulista, São Paulo - SP, 01403-002, Brasil",
+  "employee": {
+    "id": 1,
+    "name": "Colaborador",
+    "nis": "333.92337.63-9",
+    "email": "teste@pontomais.com.br",
+    "cpf": "125.634.410-09",
+    "registration_number": "1234567890",
+    "team": {
+      "id": 1,
+      "code": "0001",
+      "name": "Desenvolvimento"
+    }
+  }
+}
+```
+
+> **Importante para o PontoWatch:** este evento traz o endereço aproximado da batida (`address`, string formatada), mas **não traz latitude/longitude** (`geolocation`) nem `accuracy` — esses só existem no relatório `POST /reports/time_cards` que já usamos hoje (ver seção "Registros de ponto" acima). Ou seja, o webhook serve para saber *em tempo real que uma batida aconteceu e um endereço aproximado*, mas não substitui o relatório para fins de comparação geográfica precisa (Haversine) — para isso ainda precisamos do `geolocation` do relatório.
+
+### Evento Registro de Pausa
+
+Evento que ocorre quando o colaborador registra uma pausa em sua jornada.
+
+**Estrutura do objeto JSON a ser recebido**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| ID | Integer | ID do ponto registrado |
+| date | Date | Data do registro |
+| time | Time | Hora do registro (HH:MM) |
+| break_type | String | (Original / Incluído / Alterado / Intervalo Automático) |
+| time_card_work_day_index | Integer | Identificador único do registro de ponto |
+| employee | Object | Colaborador |
+
+**Formato do objeto `employee`**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| ID | Integer | ID do colaborador |
+| name | String (100) | Nome completo |
+| nis | String (14) | Número de Identificação Social (NIS) |
+| email | String (60) | E-mail |
+| cpf | String (14) | CPF |
+| registration_number | String (15) | Matrícula |
+| team | Object | Equipe |
+
+**Exemplo:**
+
+```json
+{
+  "id": 1,
+  "date": "2022-07-27",
+  "time": "2000-01-01T15:08:06.000Z",
+  "break_type": "Original",
+  "time_card_work_day_index": 123456,
+  "employee": {
+    "id": 1,
+    "name": "Colaborador",
+    "nis": "333.92337.63-9",
+    "email": "teste@pontomais.com.br",
+    "cpf": "125.634.410-09",
+    "registration_number": "1234567890",
+    "team": {
+      "id": 1,
+      "code": "0001",
+      "name": "Desenvolvimento"
+    }
+  }
+}
+```
+
+### Evento Criação do Colaborador
+
+Evento que ocorre quando um colaborador é criado.
+
+**Estrutura do objeto JSON a ser recebido**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| ID | Integer | Identificador sequencial gerado automaticamente pelo sistema |
+| name | String (100) | Nome completo |
+| first_name | String (50) | Primeiro nome |
+| last_name | String (50) | Sobrenome |
+| cpf | String (14) | CPF |
+| nis | String (14) | Número de Identificação Social (NIS) |
+| registration_number | String (15) | Matrícula |
+| birthdate | Date | Data de nascimento |
+| initial_date | Date | Data de início no Controle de ponto |
+| admission_date | Date | Data de admissão |
+| email | String (60) | E-mail |
+| phone_number | String | Número de telefone |
+| is_clt | Boolean | É CLT? (true - Sim / false - Não) |
+| time_card_source | Object | Método de registro |
+| job_title | Object | Cargo |
+| team | Object | Equipe |
+| shift | Object | Turno |
+| cost_center | Object | Centro de Custo |
+| address | Object | Endereço residencial do colaborador (rua, número, bairro, CEP, cidade, estado — não é geolocalização) |
+
+**Exemplo:**
+
+```json
+{
+  "id": 1,
+  "name": "First Name Last Name",
+  "first_name": "First Name",
+  "last_name": "Last Name",
+  "cpf": "935.419.720-50",
+  "nis": "333.63440.47-6",
+  "registration_number": "1234567890",
+  "birthdate": "1997-08-11",
+  "initial_date": "2021-10-22",
+  "admission_date": "2021-10-14",
+  "email": "teste@pontomais.com.br",
+  "phone_number": "(00) 01234-5678",
+  "is_clt": true,
+  "time_card_source": { "id": 1, "name": "Registro Simples" },
+  "job_title": { "id": 1, "code": "01", "name": "Gerente geral" },
+  "team": { "id": 1, "code": "0001", "name": "Administração" },
+  "shift": { "id": 1, "code": "0001", "name": "Turno administrativo" },
+  "cost_center": { "id": 1, "code": "0001", "name": "Geral" },
+  "address": {
+    "id": 1,
+    "street": "Rua da Aurora",
+    "number": "01",
+    "district": "Santa Clara",
+    "complement": "casa",
+    "zip": "80250-104",
+    "city": { "id": 2704302, "name": "Maceió" },
+    "state": { "id": "AL", "name": "Alagoas" }
+  }
+}
+```
+
+### Evento Demissão do Colaborador
+
+Evento que ocorre quando o colaborador é demitido.
+
+**Estrutura do objeto JSON a ser recebido**
+
+| Nome | Tipo | Descrição |
+|---|---|---|
+| ID | Integer | Identificador sequencial gerado automaticamente pelo sistema |
+| date | Date | Data da demissão |
+| effective_date | Date | Data efetiva da demissão |
+| created_at | Timestamp | Data e horário de criação da demissão |
+| updated_at | Timestamp | Data e horário da atualização da demissão |
+| employee | Object | Colaborador (id, name, nis, email, cpf, registration_number) |
+
+**Exemplo:**
+
+```json
+{
+  "id": 1,
+  "date": "2022-07-25",
+  "effective_date": "2022-07-27",
+  "created_at": 1658490976,
+  "updated_at": 1658490976,
+  "employee": {
+    "id": 1,
+    "name": "Colaborador",
+    "nis": "131.91111.31-6",
+    "email": "teste@pontomais.com.br",
+    "cpf": "083.343.943-17",
+    "registration_number": 1234567890
+  }
+}
+```
+
+---
+
+## [INVESTIGADO — 2026-07-06] Cercas virtuais / Pontos de referência (Configurações do Ponto Mais)
+
+**Pergunta original (2026-07-03):** dava para sincronizar automaticamente os `locais` do PontoWatch a partir dos endereços já cadastrados no Ponto Mais em Configurações → Cercas virtuais e pontos de referência?
+
+**Investigação (2026-07-06):** varredura via Playwright (Chromium headless) em todas as 24 pastas de nível superior do menu lateral desta documentação (lista definitiva, confirmada por scroll completo do menu) + busca por palavras-chave (`cerca`, `geofence`, `location_reference`, `latitude`, `longitude`, `raio`) no conteúdo de todas as seções que ainda não tinham sido capturadas (Preferências ×2, Exportação Folha, Exceções de jornada, Abonos, Webhooks, Banco cascata).
+
+**Conclusão:** **não existe** nenhuma pasta/endpoint público de "Cercas virtuais" ou "Pontos de referência" na API externa do Ponto Mais. A única menção ao conceito é o parâmetro de filtro `location_reference_id` no relatório `POST /reports/time_cards` (ver seção "Registros de ponto" acima) — ele serve só para **filtrar** um relatório por um ID de ponto de referência que já se conhece de antemão; não há `GET` para **listar** esses pontos (nome, lat/long, colaborador vinculado). Essa é, portanto, uma funcionalidade só de tela (Configurações), sem exposição via API no plano contratado.
+
+**How to apply:** o cadastro de `locais` no PontoWatch continua precisando ser manual (`locais.html`). Isso **não bloqueia** a comparação geográfica (Haversine) que o sistema já faz — essa comparação usa o `geolocation`/`original_address` de cada batida (via relatório `time_cards`, já sincronizado) contra o `local` cadastrado manualmente no roteiro, e essa parte já funciona independente dos pontos de referência do Ponto Mais.
+
+---
+
 ## [PENDENTE] Seções ainda não capturadas
 
 A pasta **Banco de horas**, **Turnos**, **Usuários**, **AFD**, **AFD-671**, **AFDT** e **AEJ** estão COMPLETAS. A pasta **Relatórios** foi INICIADA: "Jornada" está documentado com detalhe completo (nota: a tabela "Colunas disponíveis" pode ter mais linhas além das capturadas, escondidas atrás de "View More" na fonte); "Fechamento" tem apenas um corpo de exemplo capturado parcialmente, sem URL exata nem tabelas de atributos. Faltam capturar integralmente estes 26 relatórios restantes da pasta Relatórios (mesmo padrão de "POST /reports/<recurso>" com corpo `{"report": {...}}`, mas cada um com seus próprios `group_by`, `columns` e filtros específicos):
@@ -6238,13 +6494,15 @@ A pasta **Banco de horas**, **Turnos**, **Usuários**, **AFD**, **AFD-671**, **A
 
 Após a pasta Relatórios, restam ainda:
 
-- Afastamentos
-- Preferências (Configurações de Controle de Ponto)
+- ~~Afastamentos~~ — **CAPTURADO em 2026-07-06**: `GET /external_api/v1/absences` (lista afastamentos/férias, com `employee`, `absence_type`, `file` do atestado). Falta só formalizar numa seção própria com tabelas (conteúdo já extraído, ver notas de sessão).
+- Preferências (Configurações de Controle de Ponto) — **CAPTURADO em 2026-07-06**: só tem `GET /external_api/v1/preferences` (lista perfis de configuração cadastrados via plataforma web, ex: "Geral", "Banco de horas", "Sem banco", "Banco 50/50" — sem CRUD).
 - Preferências (Configurações de férias)
 - Exportação Folha
 - Exceções de jornada
 - Abonos
-- Webhooks
-- Banco cascata
+- ~~Webhooks~~ — **CAPTURADO por completo em 2026-07-06** (ver seção "Webhooks" acima: 4 eventos — Registro de Ponto, Registro de Pausa, Criação do Colaborador, Demissão do Colaborador).
+- Banco cascata — **parcialmente capturado em 2026-07-06**: "Lançamento do banco de horas" (GET Listar, GET Detalhar, POST Criar) documentado incidentalmente; falta "Quitação do banco de horas".
+
+> Nota de sessão 2026-07-06: durante a varredura por "cercas virtuais/pontos de referência" (ver seção "[INVESTIGADO]" acima), a rolagem incidental também capturou por completo um endpoint `GET/POST /external_api/v1/exemptions` (parece ser "Abonos" ou "Exceções de jornada" — a resposta de exemplo tem `"status_type": {"name": "Abono"}` — não confirmado a qual pasta exata pertence; conteúdo salvo em `full_dump_remaining.txt` no scratchpad da sessão, ainda não incorporado como seção formal no arquivo).
 
 > CONFIRMADO: "Banco cascata" é o ÚLTIMO item do menu lateral — não há mais nenhuma pasta/seção abaixo dele. A lista acima é definitiva e completa.
