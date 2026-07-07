@@ -94,6 +94,13 @@ content.innerHTML = `
           <button id="btn-imp-cancelar" class="btn btn-ghost">Cancelar</button>
         </div>
       </div>
+      <div id="imp-mensagem-area" style="display:none;margin-top:16px">
+        <label>Mensagem pronta para o grupo do WhatsApp</label>
+        <textarea id="imp-mensagem-texto" readonly rows="10" style="width:100%;margin-top:6px;resize:vertical;font-family:var(--mono);font-size:12.5px"></textarea>
+        <div class="flex gap-10" style="margin-top:10px">
+          <button id="btn-imp-copiar" class="btn btn-primary">📋 Copiar Mensagem</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -413,6 +420,7 @@ function renderizarPreviewImportacao(linhas) {
   });
 
   document.getElementById("imp-preview-area").style.display = "block";
+  document.getElementById("imp-mensagem-area").style.display = "none";
 }
 
 async function analisarPlanilha() {
@@ -445,9 +453,11 @@ async function confirmarImportacao() {
     const inpMotivo = body.querySelector(`.inp-imp-motivo[data-i="${i}"]`);
 
     return {
+      secao: linha.secao || null,
       tecnico_texto: linha.tecnico_texto,
       funcionario_id: selFunc.value || null,
       categoria,
+      unidade_texto: linha.unidade_texto || null,
       local_id: categoria === "local" ? (selLocal?.value || null) : null,
       motivo_ausencia: categoria === "ausencia" ? (inpMotivo?.value || null) : null,
       atividade_texto: linha.atividade_texto || null,
@@ -460,8 +470,9 @@ async function confirmarImportacao() {
   try {
     const r = await api.roteiros.importarConfirmar({ data_roteiro: dataRoteiro, linhas: linhasConfirmadas });
     toast(`✅ ${r.roteiros_publicados} roteiro(s) publicado(s), ${r.ausencias_registradas} ausência(s) registrada(s), ${r.ignorados} ignorada(s)`, "ok");
-    document.getElementById("imp-preview-area").style.display = "none";
     document.getElementById("imp-arquivo").value = "";
+    document.getElementById("imp-mensagem-texto").value = r.mensagem_whatsapp || "";
+    document.getElementById("imp-mensagem-area").style.display = "block";
     verificarPendentes(dataRoteiro);
   } catch (e) {
     toast("Erro ao publicar importação: " + e.message, "erro");
@@ -470,12 +481,24 @@ async function confirmarImportacao() {
   }
 }
 
+async function copiarMensagem() {
+  const texto = document.getElementById("imp-mensagem-texto").value;
+  try {
+    await navigator.clipboard.writeText(texto);
+    toast("Mensagem copiada! Cole no grupo do WhatsApp.", "ok");
+  } catch (e) {
+    toast("Não foi possível copiar automaticamente — selecione o texto manualmente.", "aviso");
+  }
+}
+
 // ── Eventos ────────────────────────────────────────────────
 document.getElementById("btn-buscar").addEventListener("click", carregarRoteiro);
 document.getElementById("btn-imp-enviar").addEventListener("click", analisarPlanilha);
 document.getElementById("btn-imp-confirmar").addEventListener("click", confirmarImportacao);
+document.getElementById("btn-imp-copiar").addEventListener("click", copiarMensagem);
 document.getElementById("btn-imp-cancelar").addEventListener("click", () => {
   document.getElementById("imp-preview-area").style.display = "none";
+  document.getElementById("imp-mensagem-area").style.display = "none";
 });
 document.getElementById("btn-publicar").addEventListener("click", publicar);
 document.getElementById("btn-add").addEventListener("click", () => {

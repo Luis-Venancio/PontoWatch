@@ -151,6 +151,43 @@ def casar_texto(texto: str, candidatos: list[dict], campo_nome: str = "nome", ma
     return {"match": None, "candidatos": [c for _, c in pontuados[:max_candidatos]]}
 
 
+def montar_mensagem_whatsapp(data_roteiro, linhas: list[dict], nomes_locais: dict[str, str]) -> str:
+    """
+    Monta o texto pronto para colar no grupo de WhatsApp, agrupado por seção
+    (ex.: "Técnicos", "Roteiro da supervisão"), a partir das linhas já
+    confirmadas pelo usuário na tela de importação. Linhas puladas
+    (sem funcionário resolvido) não entram na mensagem.
+    """
+    secoes: dict[str, list[str]] = {}
+    for linha in linhas:
+        if not linha.get("funcionario_id"):
+            continue
+
+        secao = linha.get("secao") or "Roteiro"
+        tecnico = linha["tecnico_texto"]
+        categoria = linha["categoria"]
+
+        if categoria == "local":
+            local_nome = nomes_locais.get(linha.get("local_id")) or linha.get("unidade_texto") or "local a confirmar"
+            atividade = linha.get("atividade_texto")
+            texto = f"{tecnico} — {local_nome}" + (f" ({atividade})" if atividade else "")
+        elif categoria == "ausencia":
+            texto = f"{tecnico} — {linha.get('motivo_ausencia') or 'Ausência justificada'}"
+        else:  # sem_local
+            texto = f"{tecnico} — {linha.get('unidade_texto') or 'Empresa'}"
+
+        secoes.setdefault(secao, []).append(texto)
+
+    data_fmt = data_roteiro.strftime("%d/%m/%Y") if hasattr(data_roteiro, "strftime") else str(data_roteiro)
+    partes = [f"📋 *Roteiro — {data_fmt}*", ""]
+    for secao, linhas_texto in secoes.items():
+        partes.append(f"*{secao}*")
+        partes.extend(f"• {t}" for t in linhas_texto)
+        partes.append("")
+
+    return "\n".join(partes).strip()
+
+
 def montar_preview(linhas: list[dict], funcionarios: list[dict], locais: list[dict]) -> list[dict]:
     """Combina classificação + casamento por linha, pronto para a tela de conferência."""
     preview = []

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from app.core.database import get_supabase
 from app.services.comparacao_engine import _config
-from app.services.importador_roteiro import parse_planilha, montar_preview
+from app.services.importador_roteiro import parse_planilha, montar_preview, montar_mensagem_whatsapp
 
 router = APIRouter(prefix="/roteiros", tags=["Roteiros"])
 
@@ -34,9 +34,11 @@ class PublicarRoteiroIn(BaseModel):
 
 
 class LinhaImportadaIn(BaseModel):
+    secao: Optional[str] = None
     tecnico_texto: str
     funcionario_id: Optional[str] = None
     categoria: str   # "local" | "ausencia" | "sem_local"
+    unidade_texto: Optional[str] = None
     local_id: Optional[str] = None
     motivo_ausencia: Optional[str] = None
     atividade_texto: Optional[str] = None
@@ -219,11 +221,24 @@ def importar_confirmar(payload: ImportarConfirmarIn):
         else:
             ignorados += 1
 
+    local_ids = {l.local_id for l in payload.linhas if l.funcionario_id and l.categoria == "local" and l.local_id}
+    nomes_locais = {}
+    if local_ids:
+        rows = db.table("locais").select("id, nome").in_("id", list(local_ids)).execute().data or []
+        nomes_locais = {r["id"]: r["nome"] for r in rows}
+
+    mensagem = montar_mensagem_whatsapp(
+        payload.data_roteiro,
+        [l.model_dump() for l in payload.linhas],
+        nomes_locais,
+    )
+
     return {
         "ok": True,
         "roteiros_publicados": roteiros_publicados,
         "ausencias_registradas": ausencias_registradas,
         "ignorados": ignorados,
+        "mensagem_whatsapp": mensagem,
     }
 
 
