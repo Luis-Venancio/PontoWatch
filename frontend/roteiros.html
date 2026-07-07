@@ -354,7 +354,7 @@ function optionsFuncionarios(linha) {
     .map(f => `<option value="${f.id}">${f.nome}</option>`).join("");
   const matchOpt = linha.funcionario_match
     ? `<option value="${linha.funcionario_match.id}" selected>✅ ${linha.funcionario_match.nome}</option>` : "";
-  return `<option value="" ${selecionadoId ? "" : "selected"}>-- pular esta linha --</option>${matchOpt}${candidatos}${resto}`;
+  return `<option value="" ${selecionadoId ? "" : "selected"}>-- sem cadastro (entra na mensagem, mas sem rastreio) --</option>${matchOpt}${candidatos}${resto}`;
 }
 
 function optionsLocais(linha) {

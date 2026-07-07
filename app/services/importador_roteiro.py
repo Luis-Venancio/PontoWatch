@@ -173,12 +173,17 @@ def montar_mensagem_whatsapp(data_roteiro, linhas: list[dict], nomes_locais: dic
     """
     Monta o texto pronto para colar no grupo de WhatsApp, agrupado por seção
     (ex.: "Técnicos", "Roteiro da supervisão"), a partir das linhas já
-    confirmadas pelo usuário na tela de importação. Linhas puladas
-    (sem funcionário resolvido) não entram na mensagem.
+    confirmadas pelo usuário na tela de importação.
+
+    Inclui TODA linha com técnico preenchido, mesmo quando não há
+    `funcionario_id` (técnico que ainda não existe no Ponto Mais — ex.:
+    terceirizado, admissão recente). Não ter cadastro impede o rastreamento
+    de ponto/GPS dessa pessoa no PontoWatch, mas não deve impedir que ela
+    saiba onde trabalhar no dia seguinte.
     """
     secoes: dict[str, list[str]] = {}
     for linha in linhas:
-        if not linha.get("funcionario_id"):
+        if not linha.get("tecnico_texto"):
             continue
 
         secao = linha.get("secao") or "Roteiro"

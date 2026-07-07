@@ -166,9 +166,12 @@ def importar_confirmar(payload: ImportarConfirmarIn):
     Grava o resultado já conferido/editado pelo usuário na tela de
     importação: uma parada (horário padrão da empresa) por técnico com
     local resolvido, ou uma ausência justificada em `presencas_dia` por
-    técnico marcado como Férias/Atestado/etc. Linhas sem funcionário
-    resolvido ou "sem local" (ex.: trabalho interno) não geram nada — a
-    pessoa cai no fluxo padrão do job diário.
+    técnico marcado como Férias/Atestado/etc. Linhas "sem local" (ex.:
+    trabalho interno) não geram nada — a pessoa cai no fluxo padrão do job
+    diário. Linhas sem `funcionario_id` (técnico que ainda não existe no
+    Ponto Mais) também não geram registro no banco — mas ainda entram na
+    mensagem de WhatsApp (ver `montar_mensagem_whatsapp`), já que a pessoa
+    precisa saber onde trabalhar mesmo sem cadastro pra rastrear o ponto.
     """
     db = get_supabase()
     hora_entrada = _config(db, "horario_padrao_entrada", "08:00")
