@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS presencas_dia (
     primeira_batida    TIME,
     ultima_batida      TIME,
     total_batidas      INTEGER  NOT NULL DEFAULT 0,
-    status_padrao      TEXT,    -- CONFORME | ATRASO | AUSENTE (só p/ quem NÃO tem roteiro; NULL = tem roteiro, ver `comparacoes`)
+    status_padrao      TEXT,    -- CONFORME | ATRASO | AUSENTE | JUSTIFICADA (só p/ quem NÃO tem roteiro; NULL = tem roteiro, ver `comparacoes`)
+    motivo_ausencia    TEXT,    -- preenchido quando status_padrao = JUSTIFICADA (ex.: "Férias", "Atestado")
     processado_em      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (funcionario_id, data_referencia)
 );
@@ -271,6 +272,14 @@ BEGIN
     RETURN R * 2 * atan2(sqrt(a), sqrt(1-a));
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
+
+
+-- ============================================================
+-- MIGRAÇÃO — 2026-07-07: ausência justificada (importação de roteiro)
+--   Se o banco já existia antes desta data, rode só este ALTER
+--   (o CREATE TABLE acima já sai completo para instalações novas).
+-- ============================================================
+ALTER TABLE presencas_dia ADD COLUMN IF NOT EXISTS motivo_ausencia TEXT;
 
 
 -- ============================================================

@@ -112,6 +112,11 @@ def processar_presenca_dia(dia: date) -> dict:
     (CONFORME/ATRASO/AUSENTE) usando o horário padrão da empresa
     (configuracoes: horario_padrao_entrada, tolerancia_padrao_min) — quem
     tem roteiro já tem esse cálculo mais preciso em `comparacoes`.
+
+    Exceção: quem já tem `status_padrao="JUSTIFICADA"` (Férias/Atestado
+    importado da planilha de roteiro antes do job rodar, ver
+    app/services/importador_roteiro.py) mantém essa marcação — o job não
+    deve sobrescrever uma ausência já justificada com AUSENTE/ATRASO.
     """
     db = get_supabase()
 
@@ -119,6 +124,18 @@ def processar_presenca_dia(dia: date) -> dict:
     tolerancia_padrao = int(_config(db, "tolerancia_padrao_min", "15"))
 
     funcionarios = db.table("funcionarios").select("id").eq("ativo", True).execute().data or []
+
+    justificadas_existentes = {
+        r["funcionario_id"]: r.get("motivo_ausencia")
+        for r in (
+            db.table("presencas_dia")
+            .select("funcionario_id, motivo_ausencia")
+            .eq("data_referencia", dia.isoformat())
+            .eq("status_padrao", "JUSTIFICADA")
+            .execute()
+            .data or []
+        )
+    }
 
     batidas_raw = (
         db.table("batidas_ponto")
@@ -149,8 +166,12 @@ def processar_presenca_dia(dia: date) -> dict:
         primeira_hora = _hora_da_iso(horarios[0]) if horarios else None
         primeira = primeira_hora.isoformat() if primeira_hora else None
 
+        motivo_justificado = justificadas_existentes.get(fid)
+
         status_padrao = None
-        if not tem_roteiro:
+        if motivo_justificado is not None:
+            status_padrao = "JUSTIFICADA"
+        elif not tem_roteiro:
             if not horarios:
                 status_padrao = "AUSENTE"
             else:
@@ -168,6 +189,7 @@ def processar_presenca_dia(dia: date) -> dict:
             "ultima_batida":   ultima_hora.isoformat() if ultima_hora else None,
             "total_batidas":   len(horarios),
             "status_padrao":   status_padrao,
+            "motivo_ausencia": motivo_justificado,
         })
 
     if registros:

@@ -31,6 +31,7 @@ const STATUS_MAP = {
   ATRASO:       { label: "Atraso",       cls: "late"    },
   FORA_DO_LOCAL:{ label: "Fora do local",cls: "geo"     },
   PARCIAL:      { label: "Parcial",      cls: "pending" },
+  JUSTIFICADA:  { label: "Justificado",  cls: "pending" },
 };
 
 export function pillStatus(status) {

@@ -195,7 +195,9 @@ async function carregarPresenca() {
     const d = await api.painel.presenca(hoje);
     const rows = d.registros || [];
     document.getElementById("presenca-resumo").textContent =
-      `${d.presentes} presente(s) · ${d.ausentes} ausente(s) de ${d.total}`;
+      `${d.presentes} presente(s) · ${d.ausentes} ausente(s)` +
+      (d.justificadas ? ` · ${d.justificadas} justificado(s)` : "") +
+      ` de ${d.total}`;
     if (!rows.length) {
       document.getElementById("presenca-body").innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">🕒</div><p>Nenhum funcionário ativo</p></div></td></tr>`;
       return;
@@ -206,10 +208,11 @@ async function carregarPresenca() {
         ? `<span class="pill pending">Sim</span>`
         : `<span class="text-muted">—</span>`;
       // Quem tem roteiro: status detalhado está em "Monitoramento em Tempo Real".
-      // Quem não tem: usa status_padrao (horário padrão da empresa).
+      // Quem não tem: usa status_padrao (horário padrão da empresa, ou
+      // JUSTIFICADA se veio marcado como Férias/Atestado na importação).
       const status = r.tem_roteiro
         ? `<span class="text-muted" style="font-size:12px">ver monitoramento</span>`
-        : pillStatus(r.status_padrao);
+        : pillStatus(r.status_padrao) + (r.motivo_ausencia ? ` <span class="text-muted" style="font-size:11px">${r.motivo_ausencia}</span>` : "");
       return `
         <tr>
           <td><strong>${f.nome || "—"}</strong></td>

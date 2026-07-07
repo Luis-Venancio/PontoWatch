@@ -57,6 +57,46 @@ content.innerHTML = `
     </div>
   </div>
 
+  <!-- Importar planilha (RJ/SP) ───────────────────────────── -->
+  <div class="card mb-16">
+    <div class="card-header">
+      <span>📥</span><span class="card-title">Importar Roteiro de Planilha</span>
+    </div>
+    <div class="card-body">
+      <div class="form-row" style="align-items:flex-end">
+        <div class="field">
+          <label>Arquivo (CSV exportado do Excel)</label>
+          <input type="file" id="imp-arquivo" accept=".csv,.txt"/>
+        </div>
+        <div class="field">
+          <label>Data do Roteiro</label>
+          <input type="date" id="imp-data" value="${amanhaISO}"/>
+        </div>
+        <div>
+          <button id="btn-imp-enviar" class="btn btn-ghost" style="width:100%;justify-content:center">🔍 Analisar Planilha</button>
+        </div>
+      </div>
+      <div id="imp-preview-area" style="display:none;margin-top:16px">
+        <div class="text-muted mb-10" style="font-size:12px" id="imp-preview-resumo"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Seção</th><th>Técnico (planilha)</th><th>Funcionário</th>
+                <th>Categoria</th><th>Local / Motivo</th><th>Atividade</th>
+              </tr>
+            </thead>
+            <tbody id="imp-preview-body"></tbody>
+          </table>
+        </div>
+        <div class="flex gap-10" style="margin-top:14px">
+          <button id="btn-imp-confirmar" class="btn btn-primary">✔ Confirmar e Publicar</button>
+          <button id="btn-imp-cancelar" class="btn btn-ghost">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Roteiro ──────────────────────────────────────────── -->
   <div id="roteiro-area" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:14px">
@@ -293,8 +333,150 @@ function adicionarParada() {
   toast("Parada adicionada", "ok");
 }
 
+// ── Importar planilha (RJ/SP) ──────────────────────────────
+let previewLinhas = [];
+
+function optionsFuncionarios(linha) {
+  const candidatosIds = new Set((linha.funcionario_candidatos || []).map(c => c.id));
+  const selecionadoId = linha.funcionario_match?.id || "";
+  const candidatos = (linha.funcionario_candidatos || [])
+    .map(c => `<option value="${c.id}">⭐ ${c.nome}</option>`).join("");
+  const resto = funcionarios
+    .filter(f => !candidatosIds.has(f.id) && f.id !== selecionadoId)
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .map(f => `<option value="${f.id}">${f.nome}</option>`).join("");
+  const matchOpt = linha.funcionario_match
+    ? `<option value="${linha.funcionario_match.id}" selected>✅ ${linha.funcionario_match.nome}</option>` : "";
+  return `<option value="" ${selecionadoId ? "" : "selected"}>-- pular esta linha --</option>${matchOpt}${candidatos}${resto}`;
+}
+
+function optionsLocais(linha) {
+  const candidatosIds = new Set((linha.local_candidatos || []).map(c => c.id));
+  const selecionadoId = linha.local_match?.id || "";
+  const candidatos = (linha.local_candidatos || [])
+    .map(c => `<option value="${c.id}">⭐ ${c.nome}</option>`).join("");
+  const resto = locais
+    .filter(l => !candidatosIds.has(l.id) && l.id !== selecionadoId)
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .map(l => `<option value="${l.id}">${l.nome}</option>`).join("");
+  const matchOpt = linha.local_match
+    ? `<option value="${linha.local_match.id}" selected>✅ ${linha.local_match.nome}</option>` : "";
+  return `<option value="" ${selecionadoId ? "" : "selected"}>-- selecione --</option>${matchOpt}${candidatos}${resto}`;
+}
+
+function renderizarPreviewImportacao(linhas) {
+  previewLinhas = linhas;
+  const body = document.getElementById("imp-preview-body");
+  const semMatchFunc = linhas.filter(l => !l.funcionario_match).length;
+  const semMatchLocal = linhas.filter(l => l.categoria === "local" && !l.local_match).length;
+
+  document.getElementById("imp-preview-resumo").textContent =
+    `${linhas.length} linha(s) na planilha · ${semMatchFunc} técnico(s) e ${semMatchLocal} local(is) precisam de conferência manual (marcados com ⭐)`;
+
+  body.innerHTML = linhas.map((linha, i) => {
+    const catBadge = {
+      local: '<span class="tag">Local</span>',
+      ausencia: '<span class="pill late">Ausência</span>',
+      sem_local: '<span class="pill pending">Sem local</span>',
+    }[linha.categoria] || linha.categoria;
+
+    const localOuMotivo = linha.categoria === "local"
+      ? `<select data-i="${i}" class="sel-imp-local">${optionsLocais(linha)}</select>`
+      : linha.categoria === "ausencia"
+        ? `<input type="text" data-i="${i}" class="inp-imp-motivo" value="${linha.motivo_ausencia || ''}" style="width:140px"/>`
+        : `<span class="text-muted">—</span>`;
+
+    return `
+      <tr>
+        <td class="text-muted" style="font-size:12px">${linha.secao}</td>
+        <td><strong>${linha.tecnico_texto}</strong></td>
+        <td><select data-i="${i}" class="sel-imp-func">${optionsFuncionarios(linha)}</select></td>
+        <td>
+          <select data-i="${i}" class="sel-imp-categoria" style="margin-bottom:4px">
+            <option value="local" ${linha.categoria === "local" ? "selected" : ""}>Local</option>
+            <option value="ausencia" ${linha.categoria === "ausencia" ? "selected" : ""}>Ausência</option>
+            <option value="sem_local" ${linha.categoria === "sem_local" ? "selected" : ""}>Sem local</option>
+          </select><br>${catBadge}
+        </td>
+        <td class="cel-imp-local-motivo">${localOuMotivo}</td>
+        <td class="text-muted" style="font-size:12px">${linha.atividade_texto || "—"}</td>
+      </tr>`;
+  }).join("");
+
+  // Trocar categoria re-renderiza a coluna local/motivo daquela linha
+  body.querySelectorAll(".sel-imp-categoria").forEach(sel => {
+    sel.addEventListener("change", () => {
+      const i = parseInt(sel.dataset.i);
+      previewLinhas[i].categoria = sel.value;
+      renderizarPreviewImportacao(previewLinhas);
+    });
+  });
+
+  document.getElementById("imp-preview-area").style.display = "block";
+}
+
+async function analisarPlanilha() {
+  const arquivo = document.getElementById("imp-arquivo").files[0];
+  const dataRoteiro = document.getElementById("imp-data").value;
+  if (!arquivo) { toast("Selecione um arquivo", "aviso"); return; }
+  if (!dataRoteiro) { toast("Selecione a data do roteiro", "aviso"); return; }
+
+  const btn = document.getElementById("btn-imp-enviar");
+  setLoading(btn, true);
+  try {
+    const d = await api.roteiros.importarPreview(arquivo, dataRoteiro);
+    renderizarPreviewImportacao(d.linhas || []);
+  } catch (e) {
+    toast("Erro ao analisar planilha: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+async function confirmarImportacao() {
+  const dataRoteiro = document.getElementById("imp-data").value;
+  const body = document.getElementById("imp-preview-body");
+
+  const linhasConfirmadas = previewLinhas.map((linha, i) => {
+    const selFunc = body.querySelector(`.sel-imp-func[data-i="${i}"]`);
+    const selCategoria = body.querySelector(`.sel-imp-categoria[data-i="${i}"]`);
+    const categoria = selCategoria.value;
+    const selLocal = body.querySelector(`.sel-imp-local[data-i="${i}"]`);
+    const inpMotivo = body.querySelector(`.inp-imp-motivo[data-i="${i}"]`);
+
+    return {
+      tecnico_texto: linha.tecnico_texto,
+      funcionario_id: selFunc.value || null,
+      categoria,
+      local_id: categoria === "local" ? (selLocal?.value || null) : null,
+      motivo_ausencia: categoria === "ausencia" ? (inpMotivo?.value || null) : null,
+      atividade_texto: linha.atividade_texto || null,
+      os_texto: linha.os_texto || null,
+    };
+  });
+
+  const btn = document.getElementById("btn-imp-confirmar");
+  setLoading(btn, true);
+  try {
+    const r = await api.roteiros.importarConfirmar({ data_roteiro: dataRoteiro, linhas: linhasConfirmadas });
+    toast(`✅ ${r.roteiros_publicados} roteiro(s) publicado(s), ${r.ausencias_registradas} ausência(s) registrada(s), ${r.ignorados} ignorada(s)`, "ok");
+    document.getElementById("imp-preview-area").style.display = "none";
+    document.getElementById("imp-arquivo").value = "";
+    verificarPendentes(dataRoteiro);
+  } catch (e) {
+    toast("Erro ao publicar importação: " + e.message, "erro");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
 // ── Eventos ────────────────────────────────────────────────
 document.getElementById("btn-buscar").addEventListener("click", carregarRoteiro);
+document.getElementById("btn-imp-enviar").addEventListener("click", analisarPlanilha);
+document.getElementById("btn-imp-confirmar").addEventListener("click", confirmarImportacao);
+document.getElementById("btn-imp-cancelar").addEventListener("click", () => {
+  document.getElementById("imp-preview-area").style.display = "none";
+});
 document.getElementById("btn-publicar").addEventListener("click", publicar);
 document.getElementById("btn-add").addEventListener("click", () => {
   document.getElementById("form-parada").style.display = "block";

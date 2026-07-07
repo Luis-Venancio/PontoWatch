@@ -39,6 +39,15 @@ export const api = {
     publicar:  (payload)       => request("POST",   `/roteiros/publicar`, payload),
     addParada: (parada)        => request("POST",   `/roteiros/parada`, parada),
     delParada: (id)            => request("DELETE", `/roteiros/parada/${id}`),
+    importarPreview: async (arquivo, dataRoteiro) => {
+      const form = new FormData();
+      form.append("arquivo", arquivo);
+      form.append("data_roteiro", dataRoteiro);
+      const res = await fetch(`${API_BASE}/roteiros/importar/preview`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`[${res.status}] importar/preview → ${await res.text()}`);
+      return res.json();
+    },
+    importarConfirmar: (payload) => request("POST", `/roteiros/importar/confirmar`, payload),
   },
 
   // ── Alertas ─────────────────────────────────────────────────

@@ -48,7 +48,8 @@ def resumo_do_dia(dia: date = Query(default=None)):
     except Exception:
         presenca_rows = []
 
-    ausentes = sum(1 for r in presenca_rows if not r["bateu_ponto"])
+    justificadas = sum(1 for r in presenca_rows if r["status_padrao"] == "JUSTIFICADA")
+    ausentes = sum(1 for r in presenca_rows if not r["bateu_ponto"] and r["status_padrao"] != "JUSTIFICADA")
     conformes_padrao = sum(1 for r in presenca_rows if r["status_padrao"] == "CONFORME")
     atrasos_padrao = sum(1 for r in presenca_rows if r["status_padrao"] == "ATRASO")
 
@@ -59,6 +60,7 @@ def resumo_do_dia(dia: date = Query(default=None)):
         "ausentes":      ausentes,
         "atrasos":       contadores["ATRASO"] + atrasos_padrao,
         "fora_do_local": contadores["FORA_DO_LOCAL"],
+        "ausencias_justificadas": justificadas,
     }
 
 
@@ -100,7 +102,7 @@ def presenca_geral(dia: date = Query(default=None)):
     rows = (
         db.table("presencas_dia")
         .select(
-            "bateu_ponto, tem_roteiro, status_padrao, primeira_batida, ultima_batida, total_batidas, "
+            "bateu_ponto, tem_roteiro, status_padrao, motivo_ausencia, primeira_batida, ultima_batida, total_batidas, "
             "funcionarios(nome, equipe, departamento)"
         )
         .eq("data_referencia", dia.isoformat())
@@ -110,12 +112,14 @@ def presenca_geral(dia: date = Query(default=None)):
     )
 
     presentes = sum(1 for r in rows if r["bateu_ponto"])
+    justificadas = sum(1 for r in rows if r["status_padrao"] == "JUSTIFICADA")
 
     return {
         "data": dia.isoformat(),
         "total": len(rows),
         "presentes": presentes,
-        "ausentes": len(rows) - presentes,
+        "ausentes": len(rows) - presentes - justificadas,
+        "justificadas": justificadas,
         "registros": rows,
     }
 
