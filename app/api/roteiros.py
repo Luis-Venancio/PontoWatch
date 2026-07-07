@@ -150,7 +150,7 @@ async def importar_preview(arquivo: UploadFile = File(...), data_roteiro: date =
     publicar.
     """
     conteudo = await arquivo.read()
-    linhas = parse_planilha(conteudo)
+    linhas = parse_planilha(conteudo, arquivo.filename or "")
 
     db = get_supabase()
     funcionarios = db.table("funcionarios").select("id, nome").eq("ativo", True).execute().data or []

@@ -54,19 +54,37 @@ def _abrir_texto(conteudo: bytes) -> str:
     raise RuntimeError("Não foi possível detectar a codificação do arquivo (tentei utf-8 e latin-1)")
 
 
-def parse_planilha(conteudo: bytes) -> list[dict]:
-    """
-    Lê o CSV bruto e devolve uma linha por técnico/atividade, já com a seção
-    atual anotada (ex.: "Técnicos", "Roteiro da supervisão"). Pula a linha de
-    título, o cabeçalho, linhas em branco e linhas que são só um marcador de
-    seção nova (só a 1ª coluna preenchida).
-    """
-    texto = _abrir_texto(conteudo)
-    amostra = texto.splitlines()[1] if len(texto.splitlines()) > 1 else texto.splitlines()[0]
-    delimitador = ";" if amostra.count(";") > amostra.count(",") else ","
+def _ler_linhas_brutas(conteudo: bytes, nome_arquivo: str = "") -> list[list[str]]:
+    """Lê o arquivo (CSV/TXT ou XLSX de verdade) e devolve linhas cruas
+    (lista de células em texto), sem nenhuma interpretação de seção/coluna
+    ainda — isso é feito depois, igual pros dois formatos."""
+    eh_xlsx = nome_arquivo.lower().endswith(".xlsx") or conteudo[:2] == b"PK"
+    if eh_xlsx:
+        from openpyxl import load_workbook
+        planilha = load_workbook(io.BytesIO(conteudo), read_only=True, data_only=True)
+        aba = planilha.active
+        linhas = [
+            ["" if c is None else str(c).strip() for c in linha]
+            for linha in aba.iter_rows(values_only=True)
+        ]
+        planilha.close()
+        return linhas
 
-    leitor = csv.reader(io.StringIO(texto), delimiter=delimitador)
-    linhas_brutas = list(leitor)
+    texto = _abrir_texto(conteudo)
+    linhas_texto = texto.splitlines()
+    amostra = linhas_texto[1] if len(linhas_texto) > 1 else (linhas_texto[0] if linhas_texto else "")
+    delimitador = ";" if amostra.count(";") > amostra.count(",") else ","
+    return list(csv.reader(io.StringIO(texto), delimiter=delimitador))
+
+
+def parse_planilha(conteudo: bytes, nome_arquivo: str = "") -> list[dict]:
+    """
+    Lê a planilha (CSV/TXT ou XLSX) e devolve uma linha por técnico/atividade,
+    já com a seção atual anotada (ex.: "Técnicos", "Roteiro da supervisão").
+    Pula a linha de título, o cabeçalho, linhas em branco e linhas que são só
+    um marcador de seção nova (só a 1ª coluna preenchida).
+    """
+    linhas_brutas = _ler_linhas_brutas(conteudo, nome_arquivo)
     if not linhas_brutas:
         return []
 

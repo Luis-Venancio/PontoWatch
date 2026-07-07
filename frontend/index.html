@@ -11,12 +11,12 @@
 <script type="module">
 import { montarLayout } from "./layout.js";
 import { api } from "./api.js";
-import { hojeISO, pillStatus, pillGeo, deltaMin, distanciaGPS, toast, setLoading, formatarHora } from "./utils.js";
+import { hojeISO, pillStatus, pillGeo, deltaMin, distanciaGPS, toast, setLoading, formatarHora, formatarData } from "./utils.js";
 
 montarLayout("painel", "Painel de Hoje");
 
 const content = document.getElementById("content");
-const hoje = hojeISO();
+let hoje = hojeISO();
 
 content.innerHTML = `
   <!-- KPIs -->
@@ -50,6 +50,7 @@ content.innerHTML = `
     <div class="card-header">
       <span>📋</span><span class="card-title">Monitoramento em Tempo Real</span>
       <div class="ml-auto flex gap-10">
+        <input type="date" id="inp-dia-painel" value="${hoje}" style="font-size:12px;padding:5px 8px"/>
         <button id="btn-atualizar" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">⟳ Atualizar</button>
         <button id="btn-job" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">▶ Rodar Job</button>
       </div>
@@ -120,7 +121,7 @@ async function carregarEquipes() {
     const d = await api.painel.porEquipe(hoje);
     const equipes = d.equipes || [];
     if (!equipes.length) {
-      document.getElementById("equipes-body").innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>Nenhuma equipe com roteiro hoje</p></div>`;
+      document.getElementById("equipes-body").innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>Nenhuma equipe com roteiro nesse dia</p></div>`;
       return;
     }
     document.getElementById("equipes-body").innerHTML = equipes.map(e => `
@@ -144,7 +145,7 @@ async function carregarTabela() {
     const d = await api.painel.monitoramento(hoje);
     const rows = d.registros || [];
     if (!rows.length) {
-      document.getElementById("tabela-body").innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div><p>Nenhum dado para hoje</p></div></td></tr>`;
+      document.getElementById("tabela-body").innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div><p>Nenhum dado para esse dia</p></div></td></tr>`;
       return;
     }
     document.getElementById("tabela-body").innerHTML = rows.map(r => {
@@ -174,7 +175,7 @@ async function carregarAlertas() {
     const d = await api.alertas.listar(hoje, 2);
     const alertas = (d.alertas || []).slice(0, 4);
     if (!alertas.length) {
-      document.getElementById("alertas-body").innerHTML = `<div class="empty-state"><div class="icon">🎉</div><p>Nenhum alerta hoje</p></div>`;
+      document.getElementById("alertas-body").innerHTML = `<div class="empty-state"><div class="icon">🎉</div><p>Nenhum alerta nesse dia</p></div>`;
       return;
     }
     document.getElementById("alertas-body").innerHTML = alertas.map(a => `
@@ -238,14 +239,20 @@ document.getElementById("btn-job").addEventListener("click", async () => {
   const btn = document.getElementById("btn-job");
   setLoading(btn, true);
   try {
-    const r = await api.job.executar();
-    toast(`Job concluído: ${r.comparacoes?.conformes ?? 0} conformes`, "ok");
+    const r = await api.job.executar(hoje);
+    toast(`Job concluído (${formatarData(hoje)}): ${r.comparacoes?.conformes ?? 0} conformes`, "ok");
     await carregar();
   } catch (e) {
     toast("Erro ao rodar job: " + e.message, "erro");
   } finally {
     setLoading(btn, false);
   }
+});
+
+document.getElementById("inp-dia-painel").addEventListener("change", (e) => {
+  if (!e.target.value) return;
+  hoje = e.target.value;
+  carregar();
 });
 
 // ── Carga inicial ──────────────────────────────────────────
